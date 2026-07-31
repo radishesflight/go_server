@@ -3,25 +3,28 @@
 // 用途:放在 AuthMiddleware 之后,校验当前用户对当前接口是否有权限
 //
 // 权限码生成规则(由 inferPermission):
-//   /api/system/adminUsers      POST  →  "adminUsers:add"
-//   /api/system/adminUsers/:id  GET   →  "adminUsers:view"
-//   /api/system/adminUsers/:id  PUT   →  "adminUsers:edit"
-//   /api/system/adminUsers/:id  DELETE → "adminUsers:delete"
+//
+//	/api/system/adminUsers      POST  →  "adminUsers:add"
+//	/api/system/adminUsers/:id  GET   →  "adminUsers:view"
+//	/api/system/adminUsers/:id  PUT   →  "adminUsers:edit"
+//	/api/system/adminUsers/:id  DELETE → "adminUsers:delete"
 //
 // HTTP method → 操作名:
-//   GET    → view
-//   POST   → add
-//   PUT    → edit
-//   DELETE → delete
+//
+//	GET    → view
+//	POST   → add
+//	PUT    → edit
+//	DELETE → delete
 //
 // URL 解析:
-//   /api/{group}/{menu}[/{id}][/...]
-//   例子:/api/system/adminUsers/list
-//     parts[1] = "system"   ← 第二段
-//     parts[2] = "adminUsers" ← 菜单标识(取这个)
-//   例子:/api/system/adminMenus/options
-//     parts[1] = "system"
-//     parts[2] = "adminMenus"
+//
+//	/api/{group}/{menu}[/{id}][/...]
+//	例子:/api/system/adminUsers/list
+//	  parts[1] = "system"   ← 第二段
+//	  parts[2] = "adminUsers" ← 菜单标识(取这个)
+//	例子:/api/system/adminMenus/options
+//	  parts[1] = "system"
+//	  parts[2] = "adminMenus"
 //
 // 必须放在 AuthMiddleware 之后(因为要从 gin.Context 读 permissions)
 package middleware
@@ -69,6 +72,13 @@ func PermissionMiddleware() gin.HandlerFunc {
 	}
 }
 
+// pathToMenuCode 路由 path 段 → 菜单 code 映射
+// 用于 path 段跟 menu.Code 不一致的路由,推断时把 path 段映射成 menu.Code
+// 例: path /api/system/adminRoles/* 实际菜单 code 是 roleMenu
+var pathToMenuCode = map[string]string{
+	"adminRoles": "roleMenu",
+}
+
 // inferPermission 根据 HTTP method + URL path 推断权限码
 // 返回 "menu:operation" 格式,无法推断返回 ""
 func inferPermission(method, path string) string {
@@ -99,6 +109,14 @@ func inferPermission(method, path string) string {
 	menu := parts[1]
 	if menu == "system" && len(parts) >= 3 {
 		menu = parts[2]
+	}
+
+	// 路由 path 段 → 菜单 code 映射
+	// 大多数 path 段 = menu.Code,但有些历史接口不一致
+	// 例: path 是 /api/system/adminRoles/*,但 menu.Code 是 roleMenu
+	// 跟 service 自动生成的权限码(roleMenu:view)对齐,前端也用 roleMenu:edit
+	if code, ok := pathToMenuCode[menu]; ok {
+		menu = code
 	}
 
 	return menu + ":" + operation

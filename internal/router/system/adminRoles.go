@@ -17,6 +17,8 @@ func AdminRolesRoutes(rg *gin.RouterGroup) {
 		adminRoles.PUT("/:id", system.UpdateAdminRoles)
 		adminRoles.DELETE("/:id", system.DeleteAdminRoles)
 		// 角色菜单权限
+		// /allMenus 是给"分配菜单"对话框用的(获取所有菜单),推断为 roleMenu:view
+		adminRoles.GET("/allMenus", system.GetAllMenus)
 		adminRoles.GET("/roleMenus", system.GetMenusByRole)
 		adminRoles.GET("/roleMenusWithNames", system.GetMenusByRoleWithNames)
 		adminRoles.GET("/rolePermissions", system.GetPermissionsByRole)

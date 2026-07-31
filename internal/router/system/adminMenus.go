@@ -12,7 +12,7 @@ func AdminMenusRoutes(rg *gin.RouterGroup) {
 	adminMenus.Use(middleware.AuthMiddleware(), middleware.PermissionMiddleware())
 	{
 		adminMenus.GET("/list", system.GetAdminMenusList)
-		adminMenus.GET("/all", system.GetAllMenus)
+		// /all 移到 /api/system/adminRoles/allMenus(给"分配菜单"对话框用,推断为 roleMenu:view)
 		adminMenus.GET("/options", system.GetAdminMenusOptions)
 		adminMenus.GET("/:id", system.GetAdminMenus)
 		adminMenus.POST("", system.CreateAdminMenus)
