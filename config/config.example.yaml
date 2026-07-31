@@ -1,0 +1,48 @@
+# =====================================================
+# go_server 配置示例
+# 复制本文件为 config/config.yaml 后,按需修改
+#   cp config/config.example.yaml config/config.yaml
+# 真实 config/config.yaml 已被 .gitignore 屏蔽,不会进库
+#
+# 任何字段都可以被同名环境变量覆盖(优先级 env > yaml)
+# 命名规则:全大写 + 下划线分段
+#   server.port           -> SERVER_PORT
+#   database.password     -> DATABASE_PASSWORD
+#   aliyun.oss.access_key_id -> ALIYUN_OSS_ACCESS_KEY_ID
+#
+# 敏感字段(access_key_id / access_key_secret)用占位符,真实值请放本地 config.yaml
+# =====================================================
+
+server:
+  port: 8080
+  mode: debug
+
+database:
+  host: 192.168.186.200
+  port: 3306
+  user: root
+  password: "123456"
+  dbname: go_server
+  charset: utf8mb4
+  prefix: "go_"
+
+redis:
+  host: 192.168.186.200
+  port: 6379
+  password: "123456"
+  db: 0
+
+# 跨域白名单(默认 * 兼容老前端;生产请按域名收敛)
+# 多个 origin 用逗号分隔,例如:
+#   allowed_origins: "http://localhost:5173,https://admin.example.com"
+cors:
+  allowed_origins: "*"
+
+aliyun:
+  oss:
+    endpoint: "oss-cn-chengdu.aliyuncs.com"
+    # ↓↓↓ 真实密钥请放本地 config/config.yaml(已被 .gitignore 屏蔽)↓↓↓
+    access_key_id: "YOUR_ALIYUN_ACCESS_KEY_ID"
+    access_key_secret: "YOUR_ALIYUN_ACCESS_KEY_SECRET"
+    bucket_name: "m-dys"
+    bucket_domain: "https://m-dys.oss-cn-chengdu.aliyuncs.com"

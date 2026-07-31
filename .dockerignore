@@ -1,0 +1,42 @@
+# =====================================================
+# .dockerignore - 减少构建上下文大小
+# =====================================================
+
+# git
+.git/
+.gitignore
+.gitattributes
+
+# 编辑器
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+modules.xml
+workspace.xml
+
+# 构建产物
+bin/
+*.exe
+*.exe~
+go_server
+go_server.exe
+
+# 测试覆盖
+coverage.out
+coverage.html
+
+# 日志
+*.log
+logs/
+
+# 文档 / 配置(容器内自带 example)
+README.md
+Makefile
+
+# Docker 自己
+Dockerfile
+docker-compose.yml
+.dockerignore
+.github/

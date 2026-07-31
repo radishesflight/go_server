@@ -1,0 +1,88 @@
+# ---------- 编译产物 ----------
+# 项目根目录下的二进制
+/go_server
+/server
+/main
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Makefile 输出的 bin/ 目录
+/bin/
+
+# 测试相关
+*.test
+*.out
+coverage.html
+coverage.txt
+
+# ---------- Go 工具链 ----------
+# vendor 目录(本项目用 go module,不进 vendor)
+/vendor/
+
+# Go workspace(go work 引入)
+/go.work
+/go.work.sum
+
+# ---------- IDE / 编辑器 ----------
+# IntelliJ / GoLand / JetBrains 系列
+.idea/
+*.iml
+*.iws
+*.ipr
+modules.xml
+workspace.xml
+
+# VS Code
+.vscode/
+.vscode/settings.json
+
+# 其他编辑器
+*.swp
+*.swo
+*~
+
+# ---------- 配置文件 / 密钥 ----------
+# 本地配置(真实数据库密码、AccessKey 等)
+config/config.local.yaml
+config/config.prod.yaml
+# 默认配置文件屏蔽(本地真实配置不进库)
+config/config.yaml
+.env
+.env.local
+.env.*.local
+
+# 配置示例保留进库
+!config/config.example.yaml
+!config/config.yaml.example
+
+# ---------- 日志 / 临时 ----------
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# ---------- 操作系统 ----------
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+.directory
+
+# ---------- 上传 / 静态 ----------
+# 如果以后做文件上传,产物不进库
+uploads/
+tmp/
+temp/
