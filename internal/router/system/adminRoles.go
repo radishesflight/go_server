@@ -20,6 +20,7 @@ func AdminRolesRoutes(rg *gin.RouterGroup) {
 		adminRoles.GET("/roleMenus", system.GetMenusByRole)
 		adminRoles.GET("/roleMenusWithNames", system.GetMenusByRoleWithNames)
 		adminRoles.GET("/rolePermissions", system.GetPermissionsByRole)
-		adminRoles.POST("/roleMenus", system.AssignMenusToRole)
+		// 分配菜单 = 更新角色菜单/权限,用 PUT 语义,PermissionMiddleware 推断为 adminRoles:edit
+		adminRoles.PUT("/roleMenus", system.AssignMenusToRole)
 	}
 }
