@@ -20,11 +20,11 @@
 package service
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
 	"go_server/internal/model"
+	"go_server/pkg/cache"
 )
 
 var (
@@ -122,30 +122,11 @@ func (s *RoleMenuService) AssignMenusAndOperations(roleID uint, menuIDs []uint, 
 		}
 	}
 
-	// 5. 异步清掉该角色所有用户的 token(强制重新登录,拿最新 permissions)
-	go invalidateTokensForRole(roleID)
+	// 5. bump 角色权限版本号 → 所有该角色用户的 token 都会在下一次请求时被懒加载
+	//    不用删 token,不用踢人,改完权限立刻生效
+	go cache.BumpVersion(roleID)
 
 	return nil
-}
-
-// invalidateTokensForRole 异步:删除使用该角色的所有用户的 token
-// 简化策略:删 token → 下次请求 token 失效 → 自动跳登录
-func invalidateTokensForRole(roleID uint) {
-	var users []model.AdminUsers
-	model.DB.Where("role_id = ?", roleID).Find(&users)
-
-	ctx := context.Background()
-	for _, user := range users {
-		pattern := "token:*"
-		keys, _ := model.RDB.Keys(ctx, pattern).Result()
-		for _, key := range keys {
-			uid, _ := model.RDB.HGet(ctx, key, "user_id").Uint64()
-			if uint(uid) == user.ID {
-				model.RDB.Del(ctx, key)
-				break
-			}
-		}
-	}
 }
 
 // 防 unused 警告(fmt 在新设计里没用,留接口以后报错信息可能用)

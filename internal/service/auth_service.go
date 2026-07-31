@@ -6,16 +6,18 @@
 //  3. GetCurrentUser:从 token 重新查用户/菜单/权限(用于刷新)
 //
 // 权限码生成(直接存 API 路由):
-//   角色-路由 关联 JOIN admin_menu_operations 表
-//   拼成 "METHOD /full/path" 列表(如 ["GET /api/system/adminRoles/list", "POST /api/system/adminRoles"])
-//   中间件直接拿 c.Request.Method + " " + c.FullPath() 查这个 set
+//
+//	角色-路由 关联 JOIN admin_menu_operations 表
+//	拼成 "METHOD /full/path" 列表(如 ["GET /api/system/adminRoles/list", "POST /api/system/adminRoles"])
+//	中间件直接拿 c.Request.Method + " " + c.FullPath() 查这个 set
 //
 // 业务错误(handler 用 errors.Is 翻译):
-//   ErrAuthUserNotFound    → "用户不存在"     CodeUserNotFound
-//   ErrAuthWrongPassword   → "密码错误"       CodeUserPassword
-//   ErrAuthUserNoRole      → "未分配角色"     CodeUserNoRole
-//   ErrAuthRoleNotFound    → "角色不存在"     CodeRoleNotFound
-//   ErrAuthTokenGenFailed  → "令牌生成失败"   CodeAuthFail
+//
+//	ErrAuthUserNotFound    → "用户不存在"     CodeUserNotFound
+//	ErrAuthWrongPassword   → "密码错误"       CodeUserPassword
+//	ErrAuthUserNoRole      → "未分配角色"     CodeUserNoRole
+//	ErrAuthRoleNotFound    → "角色不存在"     CodeRoleNotFound
+//	ErrAuthTokenGenFailed  → "令牌生成失败"   CodeAuthFail
 package service
 
 import (
@@ -158,6 +160,11 @@ func (s *AuthService) getMenuIDsByRole(roleID uint) ([]uint, error) {
 	return menuIDs, nil
 }
 
+// GetMenuIDsByRole 公开版 - 给中间件懒加载用
+func (s *AuthService) GetMenuIDsByRole(roleID uint) ([]uint, error) {
+	return s.getMenuIDsByRole(roleID)
+}
+
 // getPermissionRoutesByRole 取角色的权限码列表
 // 权限码 = "METHOD /full/path"  直接对应 Gin 路由,中间件直接匹配
 func (s *AuthService) getPermissionRoutesByRole(roleID uint) ([]string, error) {
@@ -187,4 +194,44 @@ func (s *AuthService) getPermissionRoutesByRole(roleID uint) ([]string, error) {
 		}
 	}
 	return permissions, nil
+}
+
+// GetPermissionRoutesByRole 公开版 - 给中间件懒加载用
+func (s *AuthService) GetPermissionRoutesByRole(roleID uint) ([]string, error) {
+	return s.getPermissionRoutesByRole(roleID)
+}
+
+// ReloadUserContext 重新加载角色的 menus + permissions
+// 给 AuthMiddleware 版本号落后时用
+// 返回值:
+//
+//	menus       - 给前端侧边栏用的扁平菜单列表
+//	permissions - 给 PermissionMiddleware 用的 "METHOD /path" 列表
+func (s *AuthService) ReloadUserContext(roleID uint) ([]cache.Menu, []string, error) {
+	// 1. 查菜单
+	menuIDs, err := s.getMenuIDsByRole(roleID)
+	if err != nil {
+		return nil, nil, err
+	}
+	var menus []model.AdminMenus
+	if len(menuIDs) > 0 {
+		model.DB.Where("id IN ? AND status = ?", menuIDs, 1).Order("sort DESC").Find(&menus)
+	}
+	flatMenus := make([]cache.Menu, 0, len(menus))
+	for _, m := range menus {
+		flatMenus = append(flatMenus, cache.Menu{
+			ID:   m.ID,
+			Name: m.Name,
+			Path: m.Path,
+			Icon: m.Icon,
+		})
+	}
+
+	// 2. 查权限
+	permissions, err := s.getPermissionRoutesByRole(roleID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return flatMenus, permissions, nil
 }

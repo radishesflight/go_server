@@ -13,14 +13,23 @@ import (
 
 const TokenExpire = 24 * time.Hour
 
+// TokenData token 解析出来的数据
+//
+// PermVersion 关键!
+//
+//	登录时记录当时的角色权限版本号
+//	中间件每次请求跟 Redis 当前 version 比
+//	落后 → 从 DB 重新加载,update token
+//	这样改权限不用踢人重登录
 type TokenData struct {
 	UserID       uint     `json:"user_id"`
 	Username     string   `json:"username"`
 	RoleID       uint     `json:"role_id"`
-	DataScope    int      `json:"data_scope"`     // 数据范围 0=全部 1=部门 2=自己
-	DepartmentID uint     `json:"department_id"`  // 所属部门(给"看部门"用)
+	DataScope    int      `json:"data_scope"`
+	DepartmentID uint     `json:"department_id"`
 	Menus        []Menu   `json:"menus"`
 	Permissions  []string `json:"permissions"`
+	PermVersion  uint64   `json:"perm_version"`
 }
 
 type Menu struct {
@@ -30,9 +39,14 @@ type Menu struct {
 	Icon string `json:"icon"`
 }
 
+// GenerateToken 生成 token 并写 Redis
+// 自动 init 角色权限版本号,记录到 token 里
 func GenerateToken(userID uint, username string, roleID uint, dataScope int, departmentID uint, menus []Menu, permissions []string) (string, error) {
 	token := uuid.New().String()
 	ctx := context.Background()
+
+	// 拿(并 init)当前角色的权限版本号
+	permVersion := GetOrInitVersion(roleID)
 
 	menusJSON, _ := json.Marshal(menus)
 	permissionsJSON, _ := json.Marshal(permissions)
@@ -46,6 +60,7 @@ func GenerateToken(userID uint, username string, roleID uint, dataScope int, dep
 		"department_id": departmentID,
 		"menus":         string(menusJSON),
 		"permissions":   string(permissionsJSON),
+		"perm_version":  permVersion,
 	}).Err(); err != nil {
 		return "", err
 	}
@@ -57,6 +72,7 @@ func GenerateToken(userID uint, username string, roleID uint, dataScope int, dep
 	return token, nil
 }
 
+// ValidateToken 从 Redis 读 token
 func ValidateToken(token string) (*TokenData, error) {
 	ctx := context.Background()
 	key := fmt.Sprintf("token:%s", token)
@@ -72,6 +88,7 @@ func ValidateToken(token string) (*TokenData, error) {
 	departmentID, _ := model.RDB.HGet(ctx, key, "department_id").Uint64()
 	menusStr, _ := model.RDB.HGet(ctx, key, "menus").Result()
 	permissionsStr, _ := model.RDB.HGet(ctx, key, "permissions").Result()
+	permVersion, _ := model.RDB.HGet(ctx, key, "perm_version").Uint64()
 
 	var menus []Menu
 	var permissions []string
@@ -86,16 +103,20 @@ func ValidateToken(token string) (*TokenData, error) {
 		DepartmentID: uint(departmentID),
 		Menus:        menus,
 		Permissions:  permissions,
+		PermVersion:  permVersion,
 	}, nil
 }
 
+// DeleteToken 删 token(登出用)
 func DeleteToken(token string) error {
 	ctx := context.Background()
 	key := fmt.Sprintf("token:%s", token)
 	return model.RDB.Del(ctx, key).Err()
 }
 
-func UpdateTokenMenusAndPermissions(token string, menus []Menu, permissions []string) error {
+// UpdateTokenMenusAndPermissions 更新 token 里的 menus + permissions + perm_version
+// 中间件发现版本号落后时调用
+func UpdateTokenMenusAndPermissions(token string, menus []Menu, permissions []string, permVersion uint64) error {
 	ctx := context.Background()
 	key := fmt.Sprintf("token:%s", token)
 
@@ -103,8 +124,9 @@ func UpdateTokenMenusAndPermissions(token string, menus []Menu, permissions []st
 	permissionsJSON, _ := json.Marshal(permissions)
 
 	model.RDB.HSet(ctx, key, map[string]interface{}{
-		"menus":       string(menusJSON),
-		"permissions": string(permissionsJSON),
+		"menus":        string(menusJSON),
+		"permissions":  string(permissionsJSON),
+		"perm_version": permVersion,
 	})
 	return nil
 }

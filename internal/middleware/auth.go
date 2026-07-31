@@ -5,8 +5,12 @@
 // 流程:
 //  1. 读 Header "Authorization" 拿 token
 //  2. 调 cache.ValidateToken 验证(token 存 Redis Hash)
-//  3. 把 user_id / username / role_id / menus / permissions 塞到 gin.Context
-//  4. 调 c.Next() 放行;失败 c.Abort() 截断
+//  3. **版本号检查**(关键!):
+//     - 拿 Redis 里的 role_perm_version:<roleID> 跟 token 里的 PermVersion 比
+//     - 落后 → 调 service 重新查 menus + permissions,update token
+//     - 不落后 → 直接用 token 里的(快)
+//  4. 把 user_id / username / role_id / menus / permissions 塞到 gin.Context
+//  5. 调 c.Next() 放行;失败 c.Abort() 截断
 //
 // 错误处理走业务码(CodeTokenMissing / CodeTokenInvalid),
 // 而不是 HTTP 401(后端业务码模式下 HTTP 恒 200)
@@ -14,14 +18,16 @@ package middleware
 
 import (
 	"go_server/internal/handler"
+	"go_server/internal/service"
 	"go_server/pkg/cache"
 
 	"github.com/gin-gonic/gin"
 )
 
+// authSvc 懒加载权限时用
+var authSvc = service.NewAuthService()
+
 // AuthMiddleware 鉴权中间件
-// 失败时:直接返回业务码错误 + Abort,handler 不会再执行
-// 成功时:把用户信息写入 gin.Context,后续 handler 可读
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 1. 取 token
@@ -40,19 +46,35 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// 3. 注入上下文(供后续 handler 使用)
-		//    user_id / role_id:GetCurrentUser 用
-		//    data_scope / department_id:数据范围过滤用
-		//    menus / permissions:PermissionMiddleware 用
+		// 3. 版本号检查 - 关键!
+		//    登录时记录 version,改权限后 INCR
+		//    落后就重新加载,不落后就直接用 token 缓存(快)
+		menus := tokenData.Menus
+		permissions := tokenData.Permissions
+		currentVersion := cache.GetOrInitVersion(tokenData.RoleID)
+
+		if tokenData.PermVersion < currentVersion {
+			// 权限被改了,重新查 DB
+			newMenus, newPerms, reloadErr := authSvc.ReloadUserContext(tokenData.RoleID)
+			if reloadErr == nil {
+				menus = newMenus
+				permissions = newPerms
+				// 同步更新 token(下次就不需要再 reload 了)
+				cache.UpdateTokenMenusAndPermissions(token, menus, permissions, currentVersion)
+			}
+			// reload 失败 → 降级用旧值,不阻断请求
+		}
+
+		// 4. 注入上下文(供后续 handler 使用)
 		c.Set("user_id", tokenData.UserID)
 		c.Set("username", tokenData.Username)
 		c.Set("role_id", tokenData.RoleID)
 		c.Set("data_scope", tokenData.DataScope)
 		c.Set("department_id", tokenData.DepartmentID)
-		c.Set("menus", tokenData.Menus)
-		c.Set("permissions", tokenData.Permissions)
+		c.Set("menus", menus)
+		c.Set("permissions", permissions)
 
-		// 4. 放行
+		// 5. 放行
 		c.Next()
 	}
 }
