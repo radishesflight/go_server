@@ -1,11 +1,11 @@
-// Package model adminRoleOperations.go - 角色-菜单-操作关联
+// Package model adminRoleOperations.go - 角色-路由 关联
 //
-// 替代旧的 role_permission 表
-// 角色对某个菜单的哪些 operation 有权限
+// 替代旧的 (RoleID, MenuID, OperationID) 三元组
+// 新设计:每行 = 角色对一条具体路由的访问权(route 自身有 menu_id,不需要再存)
 //
 // 关系:
-//   role_id + menu_id + operation_id  →  唯一确定一条权限
-// 权限码生成:menu.code + ":" + operation.code
+//
+//	admin_roles N ── N admin_menu_operations  (通过本表,字段 route_id)
 package model
 
 import (
@@ -13,10 +13,9 @@ import (
 )
 
 type AdminRoleOperations struct {
-	ID          uint `gorm:"primarykey" json:"id"`
-	RoleID      uint `gorm:"index;not null" json:"role_id"`
-	MenuID      uint `gorm:"index;not null" json:"menu_id"`
-	OperationID uint `gorm:"index;not null" json:"operation_id"`
+	ID      uint `gorm:"primarykey" json:"id"`
+	RoleID  uint `gorm:"index;not null" json:"role_id"`
+	RouteID uint `gorm:"index;not null" json:"route_id"` // 指向 admin_menu_operations.id
 }
 
 func (AdminRoleOperations) TableName() string {

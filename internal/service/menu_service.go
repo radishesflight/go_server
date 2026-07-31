@@ -1,10 +1,11 @@
 // Package service menu_service.go - 菜单管理业务
 //
 // 替代旧的 admin_menu_service.go
-// 加了 operations 关联(每个菜单支持的操作)和 dataScope 字段
+// 菜单关联 routes(admin_menu_operations 表),每条 route = (method, path)
 //
 // SortInt 兼容 string 和 int 的 JSON 解析
-//   "10" → 10 / 10 → 10 / "" → 0 / "abc" → 0
+//
+//	"10" → 10 / 10 → 10 / "" → 0 / "abc" → 0
 package service
 
 import (
@@ -50,7 +51,7 @@ func trimQuotes(s string) string {
 // MenuService 菜单管理业务
 type MenuService struct{}
 
-// NewMenuService 构造 MenuService
+// NewMenuService 构造
 func NewMenuService() *MenuService { return &MenuService{} }
 
 func formatMenu(menu model.AdminMenus) map[string]interface{} {
@@ -69,16 +70,16 @@ func formatMenu(menu model.AdminMenus) map[string]interface{} {
 	}
 }
 
-func formatOperation(op model.AdminMenuOperations) map[string]interface{} {
+func formatRoute(r model.AdminMenuOperations) map[string]interface{} {
 	return map[string]interface{}{
-		"id":         op.ID,
-		"menu_id":    op.MenuID,
-		"code":       op.Code,
-		"name":       op.Name,
-		"icon":       op.Icon,
-		"sort":       op.Sort,
-		"created_at": model.FormatTime(op.CreatedAt),
-		"updated_at": model.FormatTime(op.UpdatedAt),
+		"id":         r.ID,
+		"menu_id":    r.MenuID,
+		"method":     r.Method,
+		"path":       r.Path,
+		"name":       r.Name,
+		"sort":       r.Sort,
+		"created_at": model.FormatTime(r.CreatedAt),
+		"updated_at": model.FormatTime(r.UpdatedAt),
 	}
 }
 
@@ -121,8 +122,8 @@ func (s *MenuService) Get(id int) (map[string]interface{}, error) {
 	return formatMenu(menu), nil
 }
 
-// GetAllWithOperations 返回所有菜单(带 operations)
-// 给"分配菜单"页面用
+// GetAllWithOperations 返回所有菜单(带 routes)
+// 给"分配菜单"页面用 - 现在 routes 是 (method, path) 形式
 func (s *MenuService) GetAllWithOperations() []map[string]interface{} {
 	var menus []model.AdminMenus
 	model.DB.Order("sort DESC").Find(&menus)
@@ -132,38 +133,38 @@ func (s *MenuService) GetAllWithOperations() []map[string]interface{} {
 		menuIDs[i] = m.ID
 	}
 
-	// 一次性查所有 operations
-	var ops []model.AdminMenuOperations
+	// 一次性查所有 routes
+	var routes []model.AdminMenuOperations
 	if len(menuIDs) > 0 {
-		model.DB.Where("menu_id IN ?", menuIDs).Order("sort asc").Find(&ops)
+		model.DB.Where("menu_id IN ?", menuIDs).Order("sort asc").Find(&routes)
 	}
 
 	// 按 menu_id 分组
-	opsMap := make(map[uint][]model.AdminMenuOperations)
-	for _, op := range ops {
-		opsMap[op.MenuID] = append(opsMap[op.MenuID], op)
+	routesMap := make(map[uint][]model.AdminMenuOperations)
+	for _, r := range routes {
+		routesMap[r.MenuID] = append(routesMap[r.MenuID], r)
 	}
 
 	formatted := make([]map[string]interface{}, len(menus))
 	for i, m := range menus {
 		item := formatMenu(m)
-		item["operations"] = formatOperationsList(opsMap[m.ID])
+		item["operations"] = formatRoutesList(routesMap[m.ID]) // 字段名保留 "operations" 兼容前端
 		formatted[i] = item
 	}
 	return formatted
 }
 
-// GetOperationsByMenuID 查某菜单的所有 operation
+// GetOperationsByMenuID 查某菜单的所有 route(兼容旧名字,内部用)
 func (s *MenuService) GetOperationsByMenuID(menuID uint) []map[string]interface{} {
-	var ops []model.AdminMenuOperations
-	model.DB.Where("menu_id = ?", menuID).Order("sort asc").Find(&ops)
-	return formatOperationsList(ops)
+	var routes []model.AdminMenuOperations
+	model.DB.Where("menu_id = ?", menuID).Order("sort asc").Find(&routes)
+	return formatRoutesList(routes)
 }
 
-func formatOperationsList(ops []model.AdminMenuOperations) []map[string]interface{} {
-	formatted := make([]map[string]interface{}, len(ops))
-	for i, op := range ops {
-		formatted[i] = formatOperation(op)
+func formatRoutesList(routes []model.AdminMenuOperations) []map[string]interface{} {
+	formatted := make([]map[string]interface{}, len(routes))
+	for i, r := range routes {
+		formatted[i] = formatRoute(r)
 	}
 	return formatted
 }

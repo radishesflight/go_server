@@ -3,11 +3,12 @@
 // 跑法:go run cmd/seed/main.go
 // 会:
 //  1. 清空所有业务表
-//  2. 插入种子数据:部门 / 角色 / 菜单 / operations / 用户 / 角色-菜单 / 角色-操作
+//  2. 插入种子数据:部门 / 角色 / 菜单 / routes(API 权限) / 用户 / 角色-菜单 / 角色-路由
 //
 // 种子账号:
-//   admin / 123456(超级管理员,所有权限)
-//   test2 / 123456(测试员,只有"角色权限分配"菜单)
+//
+//	admin / 123456(超级管理员,所有权限)
+//	test2 / 123456(测试员,只有"权限分配"+"角色管理"菜单的查看/编辑权限)
 //
 // 注意:会**清空所有表**,只用于初始化/重置环境
 package main
@@ -47,8 +48,9 @@ func main() {
 	model.DB = db
 	now := time.Now()
 
-	// 2. 清空所有业务表(按外键依赖倒序)
-	// 用 Unscoped() 走硬删除,默认 Delete 是软删除(deleted_at),行还在
+	// 2. Drop & Recreate 所有业务表(按外键依赖倒序)
+	//    schema 可能跟新 model 不一致(比如旧表的 code 列还在),硬删表才能保证新 schema
+	//    先 drop 全部,再用 model 重新 create
 	tables := []interface{}{
 		&model.AdminRoleOperations{},
 		&model.AdminRoleMenus{},
@@ -59,11 +61,16 @@ func main() {
 		&model.AdminDepartments{},
 	}
 	for _, t := range tables {
-		if err := db.Unscoped().Where("1 = 1").Delete(t).Error; err != nil {
-			log.Printf("清空表 %T 失败(可能表不存在,跳过): %v", t, err)
+		if err := db.Migrator().DropTable(t); err != nil {
+			log.Printf("drop 表 %T 失败(可能表不存在,跳过): %v", t, err)
 		}
 	}
-	fmt.Println("✓ 清空旧数据(硬删除)")
+	for _, t := range tables {
+		if err := db.AutoMigrate(t); err != nil {
+			log.Fatalf("create 表 %T 失败: %v", t, err)
+		}
+	}
+	fmt.Println("✓ drop + recreate 全部业务表(用最新 schema)")
 
 	// 3. 部门
 	depts := []model.AdminDepartments{
@@ -99,38 +106,48 @@ func main() {
 	if err := db.Create(&menus).Error; err != nil {
 		log.Fatalf("插入菜单失败: %v", err)
 	}
-	fmt.Println("✓ 菜单:6 个(首页 / 系统管理 / 4 个子菜单)")
+	fmt.Println("✓ 菜单:7 个(首页 / 系统管理 / 5 个子菜单)")
 
-	// 6. operations
-	ops := []model.AdminMenuOperations{
-		// 管理员管理 (menu_id=3)
-		{BaseModel: model.BaseModel{ID: 1, CreatedAt: now, UpdatedAt: now}, MenuID: 3, Code: "view", Name: "查看", Sort: 1},
-		{BaseModel: model.BaseModel{ID: 2, CreatedAt: now, UpdatedAt: now}, MenuID: 3, Code: "add", Name: "新增", Sort: 2},
-		{BaseModel: model.BaseModel{ID: 3, CreatedAt: now, UpdatedAt: now}, MenuID: 3, Code: "edit", Name: "编辑", Sort: 3},
-		{BaseModel: model.BaseModel{ID: 4, CreatedAt: now, UpdatedAt: now}, MenuID: 3, Code: "delete", Name: "删除", Sort: 4},
-		// 权限分配 (menu_id=4)
-		{BaseModel: model.BaseModel{ID: 5, CreatedAt: now, UpdatedAt: now}, MenuID: 4, Code: "view", Name: "查看", Sort: 1},
-		{BaseModel: model.BaseModel{ID: 6, CreatedAt: now, UpdatedAt: now}, MenuID: 4, Code: "edit", Name: "编辑", Sort: 3},
-		// 菜单管理 (menu_id=5)
-		{BaseModel: model.BaseModel{ID: 7, CreatedAt: now, UpdatedAt: now}, MenuID: 5, Code: "view", Name: "查看", Sort: 1},
-		{BaseModel: model.BaseModel{ID: 8, CreatedAt: now, UpdatedAt: now}, MenuID: 5, Code: "add", Name: "新增", Sort: 2},
-		{BaseModel: model.BaseModel{ID: 9, CreatedAt: now, UpdatedAt: now}, MenuID: 5, Code: "edit", Name: "编辑", Sort: 3},
-		{BaseModel: model.BaseModel{ID: 10, CreatedAt: now, UpdatedAt: now}, MenuID: 5, Code: "delete", Name: "删除", Sort: 4},
-		// 部门管理 (menu_id=6)
-		{BaseModel: model.BaseModel{ID: 11, CreatedAt: now, UpdatedAt: now}, MenuID: 6, Code: "view", Name: "查看", Sort: 1},
-		{BaseModel: model.BaseModel{ID: 12, CreatedAt: now, UpdatedAt: now}, MenuID: 6, Code: "add", Name: "新增", Sort: 2},
-		{BaseModel: model.BaseModel{ID: 13, CreatedAt: now, UpdatedAt: now}, MenuID: 6, Code: "edit", Name: "编辑", Sort: 3},
-		{BaseModel: model.BaseModel{ID: 14, CreatedAt: now, UpdatedAt: now}, MenuID: 6, Code: "delete", Name: "删除", Sort: 4},
-		// 角色管理 (menu_id=7)
-		{BaseModel: model.BaseModel{ID: 15, CreatedAt: now, UpdatedAt: now}, MenuID: 7, Code: "view", Name: "查看", Sort: 1},
-		{BaseModel: model.BaseModel{ID: 16, CreatedAt: now, UpdatedAt: now}, MenuID: 7, Code: "add", Name: "新增", Sort: 2},
-		{BaseModel: model.BaseModel{ID: 17, CreatedAt: now, UpdatedAt: now}, MenuID: 7, Code: "edit", Name: "编辑", Sort: 3},
-		{BaseModel: model.BaseModel{ID: 18, CreatedAt: now, UpdatedAt: now}, MenuID: 7, Code: "delete", Name: "删除", Sort: 4},
+	// 6. routes(API 权限)
+	//    每行 = 一个具体接口,中间件直接用 (method, path) 匹配
+	routes := []model.AdminMenuOperations{
+		// 菜单 menu_id=3 (管理员管理 adminUsers)
+		{BaseModel: model.BaseModel{ID: 1, CreatedAt: now, UpdatedAt: now}, MenuID: 3, Method: "GET", Path: "/api/system/adminUsers/list", Name: "管理员列表", Sort: 1},
+		{BaseModel: model.BaseModel{ID: 2, CreatedAt: now, UpdatedAt: now}, MenuID: 3, Method: "GET", Path: "/api/system/adminUsers/:id", Name: "管理员详情", Sort: 2},
+		{BaseModel: model.BaseModel{ID: 3, CreatedAt: now, UpdatedAt: now}, MenuID: 3, Method: "POST", Path: "/api/system/adminUsers", Name: "新增管理员", Sort: 3},
+		{BaseModel: model.BaseModel{ID: 4, CreatedAt: now, UpdatedAt: now}, MenuID: 3, Method: "PUT", Path: "/api/system/adminUsers/:id", Name: "编辑管理员", Sort: 4},
+		{BaseModel: model.BaseModel{ID: 5, CreatedAt: now, UpdatedAt: now}, MenuID: 3, Method: "DELETE", Path: "/api/system/adminUsers/:id", Name: "删除管理员", Sort: 5},
+
+		// 菜单 menu_id=4 (权限分配 roleMenu)
+		{BaseModel: model.BaseModel{ID: 6, CreatedAt: now, UpdatedAt: now}, MenuID: 4, Method: "GET", Path: "/api/system/roleMenu/allMenus", Name: "所有菜单", Sort: 1},
+		{BaseModel: model.BaseModel{ID: 7, CreatedAt: now, UpdatedAt: now}, MenuID: 4, Method: "GET", Path: "/api/system/roleMenu/roleMenus", Name: "角色已分配菜单", Sort: 2},
+		{BaseModel: model.BaseModel{ID: 8, CreatedAt: now, UpdatedAt: now}, MenuID: 4, Method: "GET", Path: "/api/system/roleMenu/roleRoutes", Name: "角色已分配路由", Sort: 3},
+		{BaseModel: model.BaseModel{ID: 9, CreatedAt: now, UpdatedAt: now}, MenuID: 4, Method: "PUT", Path: "/api/system/roleMenu/assign", Name: "保存权限分配", Sort: 4},
+
+		// 菜单 menu_id=5 (菜单管理 adminMenus)
+		{BaseModel: model.BaseModel{ID: 10, CreatedAt: now, UpdatedAt: now}, MenuID: 5, Method: "GET", Path: "/api/system/adminMenus/list", Name: "菜单列表", Sort: 1},
+		{BaseModel: model.BaseModel{ID: 11, CreatedAt: now, UpdatedAt: now}, MenuID: 5, Method: "GET", Path: "/api/system/adminMenus/all", Name: "所有菜单(带路由)", Sort: 2},
+		{BaseModel: model.BaseModel{ID: 12, CreatedAt: now, UpdatedAt: now}, MenuID: 5, Method: "GET", Path: "/api/system/adminMenus/options", Name: "父级菜单下拉", Sort: 3},
+		{BaseModel: model.BaseModel{ID: 13, CreatedAt: now, UpdatedAt: now}, MenuID: 5, Method: "GET", Path: "/api/system/adminMenus/operations/:menu_id", Name: "某菜单的路由", Sort: 4},
+		{BaseModel: model.BaseModel{ID: 14, CreatedAt: now, UpdatedAt: now}, MenuID: 5, Method: "GET", Path: "/api/system/adminMenus/:id", Name: "菜单详情", Sort: 5},
+		{BaseModel: model.BaseModel{ID: 15, CreatedAt: now, UpdatedAt: now}, MenuID: 5, Method: "POST", Path: "/api/system/adminMenus", Name: "新增菜单", Sort: 6},
+		{BaseModel: model.BaseModel{ID: 16, CreatedAt: now, UpdatedAt: now}, MenuID: 5, Method: "PUT", Path: "/api/system/adminMenus/:id", Name: "编辑菜单", Sort: 7},
+		{BaseModel: model.BaseModel{ID: 17, CreatedAt: now, UpdatedAt: now}, MenuID: 5, Method: "DELETE", Path: "/api/system/adminMenus/:id", Name: "删除菜单", Sort: 8},
+
+		// 菜单 menu_id=6 (部门管理 departments)
+		{BaseModel: model.BaseModel{ID: 18, CreatedAt: now, UpdatedAt: now}, MenuID: 6, Method: "GET", Path: "/api/system/departments", Name: "部门列表", Sort: 1},
+
+		// 菜单 menu_id=7 (角色管理 adminRoles)
+		{BaseModel: model.BaseModel{ID: 19, CreatedAt: now, UpdatedAt: now}, MenuID: 7, Method: "GET", Path: "/api/system/adminRoles/list", Name: "角色列表", Sort: 1},
+		{BaseModel: model.BaseModel{ID: 20, CreatedAt: now, UpdatedAt: now}, MenuID: 7, Method: "GET", Path: "/api/system/adminRoles/:id", Name: "角色详情", Sort: 2},
+		{BaseModel: model.BaseModel{ID: 21, CreatedAt: now, UpdatedAt: now}, MenuID: 7, Method: "POST", Path: "/api/system/adminRoles", Name: "新增角色", Sort: 3},
+		{BaseModel: model.BaseModel{ID: 22, CreatedAt: now, UpdatedAt: now}, MenuID: 7, Method: "PUT", Path: "/api/system/adminRoles/:id", Name: "编辑角色", Sort: 4},
+		{BaseModel: model.BaseModel{ID: 23, CreatedAt: now, UpdatedAt: now}, MenuID: 7, Method: "DELETE", Path: "/api/system/adminRoles/:id", Name: "删除角色", Sort: 5},
 	}
-	if err := db.Create(&ops).Error; err != nil {
-		log.Fatalf("插入 operations 失败: %v", err)
+	if err := db.Create(&routes).Error; err != nil {
+		log.Fatalf("插入路由失败: %v", err)
 	}
-	fmt.Println("✓ operations:14 条(每个菜单 2-4 个)")
+	fmt.Printf("✓ 路由:23 条(每个 API 接口一条)\n")
 
 	// 7. 用户(密码 123456,bcrypt 加密)
 	hash := func(p string) string {
@@ -146,44 +163,56 @@ func main() {
 	}
 	fmt.Println("✓ 用户:admin / test2(密码都是 123456)")
 
-	// 8. 角色-菜单(超级管理员:全部,测试员:首页 + 系统管理 + 角色权限分配)
+	// 8. 角色-菜单(超级管理员:全部,测试员:首页+系统管理+角色+权限分配)
 	roleMenus := []model.AdminRoleMenus{
 		// 超级管理员
 		{RoleID: 1, MenuID: 1}, {RoleID: 1, MenuID: 2}, {RoleID: 1, MenuID: 3},
 		{RoleID: 1, MenuID: 4}, {RoleID: 1, MenuID: 5}, {RoleID: 1, MenuID: 6},
 		{RoleID: 1, MenuID: 7},
-		// 测试员(也要看角色列表 + 编辑 + 分配权限)
+		// 测试员:首页 + 系统管理 + 角色管理 + 权限分配
 		{RoleID: 2, MenuID: 1}, {RoleID: 2, MenuID: 2}, {RoleID: 2, MenuID: 4},
 		{RoleID: 2, MenuID: 7},
 	}
 	if err := db.Create(&roleMenus).Error; err != nil {
 		log.Fatalf("插入角色-菜单失败: %v", err)
 	}
-	fmt.Println("✓ 角色-菜单:超级管理员 6 个 / 测试员 3 个")
+	fmt.Println("✓ 角色-菜单:超级管理员 7 个 / 测试员 4 个")
 
-	// 9. 角色-操作
+	// 9. 角色-路由(基于真实 API 列表)
+	//    超级管理员:全部 23 条
+	//    测试员:角色管理 view+edit + 权限分配 view+edit
+	//      roleMenus: GET 19, GET 20(view only), GET 6, 7, 8
+	//      roleAssign: PUT 9(edit)
+	//      roles  edit: PUT 22
 	roleOps := []model.AdminRoleOperations{
-		// 超级管理员:所有操作
-		{RoleID: 1, MenuID: 3, OperationID: 1}, {RoleID: 1, MenuID: 3, OperationID: 2},
-		{RoleID: 1, MenuID: 3, OperationID: 3}, {RoleID: 1, MenuID: 3, OperationID: 4},
-		{RoleID: 1, MenuID: 4, OperationID: 5}, {RoleID: 1, MenuID: 4, OperationID: 6},
-		{RoleID: 1, MenuID: 5, OperationID: 7}, {RoleID: 1, MenuID: 5, OperationID: 8},
-		{RoleID: 1, MenuID: 5, OperationID: 9}, {RoleID: 1, MenuID: 5, OperationID: 10},
-		{RoleID: 1, MenuID: 6, OperationID: 11}, {RoleID: 1, MenuID: 6, OperationID: 12},
-		{RoleID: 1, MenuID: 6, OperationID: 13}, {RoleID: 1, MenuID: 6, OperationID: 14},
-		{RoleID: 1, MenuID: 7, OperationID: 15}, {RoleID: 1, MenuID: 7, OperationID: 16},
-		{RoleID: 1, MenuID: 7, OperationID: 17}, {RoleID: 1, MenuID: 7, OperationID: 18},
-		// 测试员:权限分配(只 view + edit) + 角色管理(只 view + edit)
-		{RoleID: 2, MenuID: 4, OperationID: 5}, {RoleID: 2, MenuID: 4, OperationID: 6},
-		{RoleID: 2, MenuID: 7, OperationID: 15}, {RoleID: 2, MenuID: 7, OperationID: 17},
+		// 超级管理员:全部
+		{RoleID: 1, RouteID: 1}, {RoleID: 1, RouteID: 2}, {RoleID: 1, RouteID: 3},
+		{RoleID: 1, RouteID: 4}, {RoleID: 1, RouteID: 5},
+		{RoleID: 1, RouteID: 6}, {RoleID: 1, RouteID: 7}, {RoleID: 1, RouteID: 8},
+		{RoleID: 1, RouteID: 9},
+		{RoleID: 1, RouteID: 10}, {RoleID: 1, RouteID: 11}, {RoleID: 1, RouteID: 12},
+		{RoleID: 1, RouteID: 13}, {RoleID: 1, RouteID: 14}, {RoleID: 1, RouteID: 15},
+		{RoleID: 1, RouteID: 16}, {RoleID: 1, RouteID: 17},
+		{RoleID: 1, RouteID: 18},
+		{RoleID: 1, RouteID: 19}, {RoleID: 1, RouteID: 20}, {RoleID: 1, RouteID: 21},
+		{RoleID: 1, RouteID: 22}, {RoleID: 1, RouteID: 23},
+
+		// 测试员:权限分配(查看 + 保存)+ 角色管理(查看 + 编辑)
+		{RoleID: 2, RouteID: 6},  // GET /api/system/roleMenu/allMenus
+		{RoleID: 2, RouteID: 7},  // GET /api/system/roleMenu/roleMenus
+		{RoleID: 2, RouteID: 8},  // GET /api/system/roleMenu/roleRoutes
+		{RoleID: 2, RouteID: 9},  // PUT /api/system/roleMenu/assign
+		{RoleID: 2, RouteID: 19}, // GET /api/system/adminRoles/list
+		{RoleID: 2, RouteID: 20}, // GET /api/system/adminRoles/:id
+		{RoleID: 2, RouteID: 22}, // PUT /api/system/adminRoles/:id
 	}
 	if err := db.Create(&roleOps).Error; err != nil {
-		log.Fatalf("插入角色-操作失败: %v", err)
+		log.Fatalf("插入角色-路由失败: %v", err)
 	}
-	fmt.Println("✓ 角色-操作:超级管理员 14 个 / 测试员 2 个")
+	fmt.Println("✓ 角色-路由:超级管理员 23 个 / 测试员 7 个")
 
 	fmt.Println("\n🎉 Seed 完成!")
 	fmt.Println("   admin / 123456  → 超级管理员(全权限)")
-	fmt.Println("   test2 / 123456  → 测试员(只有角色权限分配)")
+	fmt.Println("   test2 / 123456  → 测试员(角色管理 + 权限分配)")
 	fmt.Println("\n下一步:重启后端 + 前端,登录 admin 验证。")
 }

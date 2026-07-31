@@ -1,8 +1,7 @@
 // Package system roleMenu.go - 角色菜单权限分配路由
 //
-// 替代旧的 adminRoles.go 里的 /roleMenus/* 路由
 // 路由组: /api/system/roleMenu
-// 注意:路由组名"roleMenu"对应权限中间件推断"roleMenu:xxx"(菜单 code 是 "roleMenu")
+// 中间件校验:直接从 token 的 permissions 集合(每项 = "METHOD /path")查 c.Request.Method + " " + c.FullPath()
 package system
 
 import (
@@ -19,7 +18,7 @@ func RoleMenuRoutes(rg *gin.RouterGroup) {
 	{
 		rm.GET("/allMenus", system.GetRoleMenuAllMenus)
 		rm.GET("/roleMenus", system.GetRoleMenuIDs)
-		rm.GET("/roleOperations", system.GetRoleOperationCodes)
-		rm.POST("/assign", system.AssignMenusAndOperations)
+		rm.GET("/roleRoutes", system.GetRoleRouteIDs)
+		rm.PUT("/assign", system.AssignMenusAndOperations)
 	}
 }

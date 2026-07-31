@@ -3,15 +3,17 @@
 // 替代旧的 roleMenu.go(同包内,内容全重写)
 //
 // 接口列表:
-//  GET  /api/system/roleMenu/allMenus              所有菜单(带 operations,供前端"分配菜单"对话框)
-//  GET  /api/system/roleMenu/roleMenus?role_id=    某角色已分配的菜单 ID
-//  GET  /api/system/roleMenu/roleOperations?role_id=  某角色已分配的操作(按 menu_id 分组)
-//  POST /api/system/roleMenu/assign                分配 {role_id, menu_ids, operations}
+//
+//	GET  /api/system/roleMenu/allMenus            所有菜单(带 routes,供前端"分配菜单"对话框)
+//	GET  /api/system/roleMenu/roleMenus?role_id=  某角色已分配的菜单 ID
+//	GET  /api/system/roleMenu/roleRoutes?role_id= 某角色已分配的路由 ID
+//	PUT  /api/system/roleMenu/assign              分配 {role_id, menu_ids, route_ids}
 //
 // 业务码翻译表:
-//  service.ErrRoleMenuRequireRole → CodeParamsInvalid
-//  service.ErrRoleMenuAssign      → CodeUnknown
-//  service.ErrRolePermAssign      → CodeUnknown
+//
+//	service.ErrRoleMenuRequireRole → CodeParamsInvalid
+//	service.ErrRoleMenuAssign      → CodeUnknown
+//	service.ErrRolePermAssign      → CodeUnknown
 package system
 
 import (
@@ -24,19 +26,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// roleMenuSvc 角色-菜单-操作 业务入口
+// roleMenuSvc 角色-菜单-路由 业务入口
 var roleMenuSvc = service.NewRoleMenuService()
 
 // AssignMenuReq 分配请求体
-// menu_ids: 角色可见的菜单 ID 列表
-// operations: { menu_id: [operation_code, ...] }
+// route_ids 是 admin_menu_operations.id 的列表
 type AssignMenuReq struct {
-	RoleID     uint                `json:"role_id" binding:"required"`
-	MenuIDs    []uint              `json:"menu_ids"`
-	Operations map[uint][]string   `json:"operations"` // key 是 menu_id (uint),value 是 operation code 列表
+	RoleID   uint   `json:"role_id" binding:"required"`
+	MenuIDs  []uint `json:"menu_ids"`
+	RouteIDs []uint `json:"route_ids"`
 }
 
-// GetRoleMenuAllMenus 所有菜单(带 operations,供"分配菜单"对话框)
+// GetRoleMenuAllMenus 所有菜单(带 routes,供"分配菜单"对话框)
 func GetRoleMenuAllMenus(c *gin.Context) {
 	list := menuSvc.GetAllWithOperations()
 	handler.Success(c, list)
@@ -44,18 +45,12 @@ func GetRoleMenuAllMenus(c *gin.Context) {
 
 // GetRoleMenuIDs 某角色已分配的菜单 ID
 func GetRoleMenuIDs(c *gin.Context) {
-	roleIDStr := c.Query("role_id")
-	if roleIDStr == "" {
-		handler.Error(c, handler.CodeParamsInvalid, "请选择角色")
-		return
-	}
-	roleID, err := strconv.ParseUint(roleIDStr, 10, 64)
-	if err != nil {
-		handler.Error(c, handler.CodeParamsInvalid, "无效的角色ID")
+	roleID, ok := parseRoleID(c)
+	if !ok {
 		return
 	}
 
-	menuIDs, err := roleMenuSvc.GetRoleMenuIDs(uint(roleID))
+	menuIDs, err := roleMenuSvc.GetRoleMenuIDs(roleID)
 	if err != nil {
 		handler.Error(c, handler.CodeParamsInvalid, "请选择角色")
 		return
@@ -66,31 +61,25 @@ func GetRoleMenuIDs(c *gin.Context) {
 	})
 }
 
-// GetRoleOperationCodes 某角色已分配的操作(按 menu_id 分组)
-func GetRoleOperationCodes(c *gin.Context) {
-	roleIDStr := c.Query("role_id")
-	if roleIDStr == "" {
-		handler.Error(c, handler.CodeParamsInvalid, "请选择角色")
-		return
-	}
-	roleID, err := strconv.ParseUint(roleIDStr, 10, 64)
-	if err != nil {
-		handler.Error(c, handler.CodeParamsInvalid, "无效的角色ID")
+// GetRoleRouteIDs 某角色已分配的路由 ID
+func GetRoleRouteIDs(c *gin.Context) {
+	roleID, ok := parseRoleID(c)
+	if !ok {
 		return
 	}
 
-	operations, err := roleMenuSvc.GetRoleOperationCodes(uint(roleID))
+	routeIDs, err := roleMenuSvc.GetRoleRouteIDs(roleID)
 	if err != nil {
 		handler.Error(c, handler.CodeParamsInvalid, "请选择角色")
 		return
 	}
 
 	handler.Success(c, gin.H{
-		"operations": operations,
+		"route_ids": routeIDs,
 	})
 }
 
-// AssignMenusAndOperations 给角色分配菜单和操作
+// AssignMenusAndOperations 给角色分配菜单和路由
 func AssignMenusAndOperations(c *gin.Context) {
 	var req AssignMenuReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -98,14 +87,14 @@ func AssignMenusAndOperations(c *gin.Context) {
 		return
 	}
 
-	if err := roleMenuSvc.AssignMenusAndOperations(req.RoleID, req.MenuIDs, req.Operations); err != nil {
+	if err := roleMenuSvc.AssignMenusAndOperations(req.RoleID, req.MenuIDs, req.RouteIDs); err != nil {
 		switch {
 		case errors.Is(err, service.ErrRoleMenuRequireRole):
 			handler.Error(c, handler.CodeParamsInvalid, "请选择角色")
 		case errors.Is(err, service.ErrRoleMenuAssign):
 			handler.Error(c, handler.CodeUnknown, "分配菜单失败")
 		case errors.Is(err, service.ErrRolePermAssign):
-			handler.Error(c, handler.CodeUnknown, "分配操作失败")
+			handler.Error(c, handler.CodeUnknown, "分配路由失败")
 		default:
 			handler.Error(c, handler.CodeUnknown, "分配失败")
 		}
@@ -113,4 +102,19 @@ func AssignMenusAndOperations(c *gin.Context) {
 	}
 
 	handler.Success(c, nil)
+}
+
+// parseRoleID 解析 query 里的 role_id,失败直接写错误响应
+func parseRoleID(c *gin.Context) (uint, bool) {
+	roleIDStr := c.Query("role_id")
+	if roleIDStr == "" {
+		handler.Error(c, handler.CodeParamsInvalid, "请选择角色")
+		return 0, false
+	}
+	roleID, err := strconv.ParseUint(roleIDStr, 10, 64)
+	if err != nil {
+		handler.Error(c, handler.CodeParamsInvalid, "无效的角色ID")
+		return 0, false
+	}
+	return uint(roleID), true
 }

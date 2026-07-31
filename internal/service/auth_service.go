@@ -1,13 +1,14 @@
 // Package service auth_service.go - 认证业务
 //
 // 三个核心方法:
-//  1. Login:校验用户名密码 → 查角色 → 查菜单 → 查操作 → 生成 token
+//  1. Login:校验用户名密码 → 查角色 → 查菜单 → 查路由权限 → 生成 token
 //  2. Logout:删 Redis 里的 token 记录
 //  3. GetCurrentUser:从 token 重新查用户/菜单/权限(用于刷新)
 //
-// 权限码生成:
-//   角色-操作 关联 JOIN 菜单和 operation 表
-//   拼成 "menu_code:operation_code" 列表(如 ["adminUsers:view", "adminUsers:add"])
+// 权限码生成(直接存 API 路由):
+//   角色-路由 关联 JOIN admin_menu_operations 表
+//   拼成 "METHOD /full/path" 列表(如 ["GET /api/system/adminRoles/list", "POST /api/system/adminRoles"])
+//   中间件直接拿 c.Request.Method + " " + c.FullPath() 查这个 set
 //
 // 业务错误(handler 用 errors.Is 翻译):
 //   ErrAuthUserNotFound    → "用户不存在"     CodeUserNotFound
@@ -19,6 +20,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -84,8 +86,8 @@ func (s *AuthService) Login(username, password string) (string, gin.H, []*MenuTr
 		})
 	}
 
-	// 3. 查角色-操作 → 拼成权限码
-	permissions, err := s.getPermissionCodesByRole(user.RoleID)
+	// 3. 查角色-路由 → 拼成 "METHOD /path" 权限列表
+	permissions, err := s.getPermissionRoutesByRole(user.RoleID)
 	if err != nil {
 		return "", nil, nil, nil, err
 	}
@@ -125,7 +127,7 @@ func (s *AuthService) GetCurrentUser(userID, roleID uint) (gin.H, []*MenuTreeNod
 	}
 	menuList := BuildMenuTree(menus)
 
-	permissions, _ := s.getPermissionCodesByRole(roleID)
+	permissions, _ := s.getPermissionRoutesByRole(roleID)
 
 	return gin.H{
 		"id":            user.ID,
@@ -156,9 +158,9 @@ func (s *AuthService) getMenuIDsByRole(roleID uint) ([]uint, error) {
 	return menuIDs, nil
 }
 
-// getPermissionCodesByRole 取角色的权限码列表
-// 权限码 = "menu_code:operation_code"
-func (s *AuthService) getPermissionCodesByRole(roleID uint) ([]string, error) {
+// getPermissionRoutesByRole 取角色的权限码列表
+// 权限码 = "METHOD /full/path"  直接对应 Gin 路由,中间件直接匹配
+func (s *AuthService) getPermissionRoutesByRole(roleID uint) ([]string, error) {
 	var roleOps []model.AdminRoleOperations
 	model.DB.Where("role_id = ?", roleID).Find(&roleOps)
 
@@ -166,49 +168,22 @@ func (s *AuthService) getPermissionCodesByRole(roleID uint) ([]string, error) {
 		return []string{}, nil
 	}
 
-	// 一次查所有 operation
-	opIDs := make([]uint, len(roleOps))
+	// 一次查所有 route(method + path)
+	routeIDs := make([]uint, len(roleOps))
 	for i, ro := range roleOps {
-		opIDs[i] = ro.OperationID
+		routeIDs[i] = ro.RouteID
 	}
-	var ops []model.AdminMenuOperations
-	model.DB.Where("id IN ?", opIDs).Find(&ops)
-	opMap := make(map[uint]model.AdminMenuOperations)
-	for _, op := range ops {
-		opMap[op.ID] = op
-	}
+	var routes []model.AdminMenuOperations
+	model.DB.Where("id IN ?", routeIDs).Find(&routes)
 
-	// 一次查所有 menu(拿 code)
-	menuIDsMap := make(map[uint]bool)
-	for _, ro := range roleOps {
-		menuIDsMap[ro.MenuID] = true
-	}
-	menuIDsList := make([]uint, 0, len(menuIDsMap))
-	for mid := range menuIDsMap {
-		menuIDsList = append(menuIDsList, mid)
-	}
-	var menus []model.AdminMenus
-	if len(menuIDsList) > 0 {
-		model.DB.Where("id IN ?", menuIDsList).Find(&menus)
-	}
-	menuCodeMap := make(map[uint]string)
-	for _, m := range menus {
-		menuCodeMap[m.ID] = m.Code
-	}
-
-	// 拼成 menu_code:op_code
+	// 拼成 "METHOD /path",去重
 	permSet := make(map[string]bool)
 	permissions := make([]string, 0)
-	for _, ro := range roleOps {
-		op, ok1 := opMap[ro.OperationID]
-		menuCode, ok2 := menuCodeMap[ro.MenuID]
-		if !ok1 || !ok2 {
-			continue
-		}
-		code := menuCode + ":" + op.Code
-		if !permSet[code] {
-			permSet[code] = true
-			permissions = append(permissions, code)
+	for _, r := range routes {
+		key := strings.ToUpper(r.Method) + " " + r.Path
+		if !permSet[key] {
+			permSet[key] = true
+			permissions = append(permissions, key)
 		}
 	}
 	return permissions, nil
