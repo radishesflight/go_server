@@ -1,3 +1,14 @@
+// Package handler 提供 HTTP 业务响应工具
+//
+// 所有业务接口的响应格式:
+//  {
+//    "code": 0,                  // 业务码(0=成功,非0=具体错误,见 bizcode.go)
+//    "msg": "success",            // 给用户看的错误文案
+//    "data": { ... }              // 成功时的业务数据
+//  }
+//
+// HTTP 状态码**恒为 200**,真实状态在 body.code 里。
+// 这是国内后台项目的标准做法(避免浏览器拦截 4xx、网关改写状态码)。
 package handler
 
 import (
@@ -7,10 +18,6 @@ import (
 )
 
 // Response 统一响应结构
-// 业务码模式:HTTP 状态码恒为 200,真实状态在 body.code 里
-//   code 字段语义:
-//     0    成功
-//     非 0  业务错误(见 bizcode.go)
 type Response struct {
 	Code int         `json:"code"`
 	Msg  string      `json:"msg"`
@@ -18,6 +25,7 @@ type Response struct {
 }
 
 // Success 成功响应
+// HTTP 200 + {code: 0, msg: "success", data: ...}
 func Success(c *gin.Context, data interface{}) {
 	c.JSON(http.StatusOK, Response{
 		Code: CodeSuccess,
@@ -27,8 +35,9 @@ func Success(c *gin.Context, data interface{}) {
 }
 
 // Error 错误响应
-// code 必须是 handler.CodeXxx 业务码
-// msg  给用户看的错误文案
+// HTTP 200 + {code: <业务码>, msg: <错误文案>}
+// code 必须是 handler.CodeXxx 业务码(见 bizcode.go)
+// msg 是给用户看的提示文案
 func Error(c *gin.Context, code int, msg string) {
 	c.JSON(http.StatusOK, Response{
 		Code: code,

@@ -1,3 +1,10 @@
+// Package service admin_role_service.go - 角色管理业务
+//
+// CRUD + 软删除
+// 业务错误:
+//  ErrRoleInvalidID      → 无效的 ID
+//  ErrRoleNotFound       → 角色不存在
+//  ErrRoleNameDuplicate  → 角色名重复
 package service
 
 import (

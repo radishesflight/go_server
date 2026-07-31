@@ -1,3 +1,12 @@
+// Package service admin_user_service.go - 用户管理业务
+//
+// CRUD + 软删除;密码用 bcrypt 加密(在 SetPassword / CheckPassword 里)
+// 业务错误:
+//  ErrUserInvalidID       → 无效的 ID
+//  ErrUserNotFound        → 用户不存在
+//  ErrUserNameDuplicate   → 用户名已存在
+//  ErrUserPasswordHash    → 密码加密失败
+//  ErrUserCreate/Update/Delete → DB 操作失败
 package service
 
 import (

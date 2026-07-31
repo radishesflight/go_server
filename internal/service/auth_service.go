@@ -1,3 +1,16 @@
+// Package service auth_service.go - 认证业务
+//
+// 三个核心方法:
+//  1. Login:校验用户名密码 → 查角色 → 查菜单 → 查权限 → 生成 token
+//  2. Logout:删 Redis 里的 token 记录
+//  3. GetCurrentUser:从 token 重新查用户/菜单/权限(用于刷新)
+//
+// 业务错误(handler 用 errors.Is 翻译):
+//  ErrAuthUserNotFound    → "用户不存在"     CodeUserNotFound
+//  ErrAuthWrongPassword   → "密码错误"       CodeUserPassword
+//  ErrAuthUserNoRole      → "未分配角色"     CodeUserNoRole
+//  ErrAuthRoleNotFound    → "角色不存在"     CodeRoleNotFound
+//  ErrAuthTokenGenFailed  → "令牌生成失败"   CodeAuthFail
 package service
 
 import (

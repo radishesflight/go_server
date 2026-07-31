@@ -1,3 +1,24 @@
+// Package config 提供全局配置加载
+//
+// 使用流程:
+//  1. cmd/server/main.go 调 InitConfig("config/config.yaml")
+//  2. 业务代码用 config.AppConfig.Xxx.Yyy 读字段
+//
+// 配置优先级(从高到低):
+//  1. 环境变量(env > yaml)
+//  2. config.yaml(本地真实配置,.gitignore 屏蔽)
+//  3. config.example.yaml(示例,进库)
+//
+// env 命名规则:yaml 字段全大写 + 下划线
+//   server.port            → SERVER_PORT
+//   database.password      → DATABASE_PASSWORD
+//   aliyun.oss.access_key_id → ALIYUN_OSS_ACCESS_KEY_ID
+//
+// 加新字段的步骤:
+//  1. 在对应 XxxConfig struct 加字段
+//  2. 在 config.example.yaml 加示例
+//  3. 在 applyEnvOverrides 加 env 覆盖逻辑
+//  4. 业务代码用 config.AppConfig.Xxx.Yyy
 package config
 
 import (

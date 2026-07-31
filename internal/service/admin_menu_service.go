@@ -1,3 +1,15 @@
+// Package service admin_menu_service.go - 菜单管理业务
+//
+// CRUD + SortInt(兼容前端传 string "10" 或 int 10)
+// 业务错误:
+//  ErrMenuInvalidID → 无效的 ID
+//  ErrMenuNotFound  → 菜单不存在
+//
+// SortInt 设计:前端可能用 el-input number 传 string,UnmarshalJSON 兼容
+//   "10" → 10
+//   10   → 10
+//   ""   → 0
+//   "abc" → 0
 package service
 
 import (

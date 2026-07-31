@@ -1,3 +1,14 @@
+// Package service upload_service.go - 文件上传业务
+//
+// 业务流程(UploadImage):
+//  1. 校验扩展名(jpg/jpeg/png/gif/webp)
+//  2. 校验大小(≤ 5MB)
+//  3. 校验 OSS 配置(从 config.AppConfig.Aliyun.OSS)
+//  4. 创建 OSS 客户端 + 拿 Bucket
+//  5. 上传 object(uploads/<timestamp><ext>)
+//  6. 拼 URL(BucketDomain + object_key)
+//
+// 业务错误:见 internal/handler/upload.go 的翻译表
 package service
 
 import (

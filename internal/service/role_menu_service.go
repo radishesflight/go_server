@@ -1,3 +1,18 @@
+// Package service role_menu_service.go - 角色-菜单 / 角色-权限 业务
+//
+// 核心:AssignMenusToRole
+//  1. 删 role_menu_relation 旧记录
+//  2. 批量 insert 新 menu_ids 关联
+//  3. 删 role_permission 旧记录
+//  4. 自动补充 <menu_code>:view 权限(每个菜单默认有 view)
+//  5. 合并前端传的 permissions(去重)
+//  6. 批量 insert 新 permissions
+//  7. 异步(go func)更新使用该角色的用户 token 缓存
+//
+// 业务错误:
+//  ErrRoleMenuRequireRole → role_id 缺失或无效
+//  ErrRoleMenuAssign      → 关联菜单失败
+//  ErrRolePermAssign      → 关联权限失败
 package service
 
 import (
