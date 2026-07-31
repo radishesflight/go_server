@@ -1,4 +1,7 @@
-// Package service admin_role_service.go - 角色管理业务
+// Package service role_service.go - 角色管理业务
+//
+// 替代旧的 admin_role_service.go
+// 加了 dataScope 字段(数据范围权限)
 //
 // CRUD + 软删除
 // 业务错误:
@@ -13,7 +16,6 @@ import (
 	"go_server/internal/model"
 )
 
-// 业务错误(与原 handler 中的错误文案对应)
 var (
 	ErrRoleInvalidID     = errors.New("无效的角色ID")
 	ErrRoleNotFound      = errors.New("角色不存在")
@@ -23,11 +25,11 @@ var (
 	ErrRoleDelete        = errors.New("删除角色失败")
 )
 
-// AdminRoleService 角色管理业务
-type AdminRoleService struct{}
+// RoleService 角色管理业务
+type RoleService struct{}
 
-// NewAdminRoleService 构造 AdminRoleService
-func NewAdminRoleService() *AdminRoleService { return &AdminRoleService{} }
+// NewRoleService 构造 RoleService
+func NewRoleService() *RoleService { return &RoleService{} }
 
 // formatRole 把角色 model 序列化成给前端的 map
 func formatRole(role model.AdminRoles) map[string]interface{} {
@@ -36,13 +38,14 @@ func formatRole(role model.AdminRoles) map[string]interface{} {
 		"name":       role.Name,
 		"describe":   role.Describe,
 		"status":     role.Status,
+		"data_scope": role.DataScope, // 0=全部 1=部门 2=自己
 		"created_at": model.FormatTime(role.CreatedAt),
 		"updated_at": model.FormatTime(role.UpdatedAt),
 	}
 }
 
 // GetList 分页查询角色列表
-func (s *AdminRoleService) GetList(page, size, status int) ([]map[string]interface{}, int64, error) {
+func (s *RoleService) GetList(page, size, status int) ([]map[string]interface{}, int64, error) {
 	if page <= 0 {
 		page = 1
 	}
@@ -69,7 +72,7 @@ func (s *AdminRoleService) GetList(page, size, status int) ([]map[string]interfa
 }
 
 // Get 单条角色
-func (s *AdminRoleService) Get(id int) (map[string]interface{}, error) {
+func (s *RoleService) Get(id int) (map[string]interface{}, error) {
 	if id <= 0 {
 		return nil, ErrRoleInvalidID
 	}
@@ -80,17 +83,18 @@ func (s *AdminRoleService) Get(id int) (map[string]interface{}, error) {
 	return formatRole(role), nil
 }
 
-// Create 创建角色
-func (s *AdminRoleService) Create(name, describe string, status int) (map[string]interface{}, error) {
+// Create 创建角色(dataScope: 0=全部 1=部门 2=自己)
+func (s *RoleService) Create(name, describe string, status, dataScope int) (map[string]interface{}, error) {
 	var existing model.AdminRoles
 	if err := model.DB.Where("name = ?", name).First(&existing).Error; err == nil {
 		return nil, ErrRoleNameDuplicate
 	}
 
 	role := model.AdminRoles{
-		Name:     name,
-		Describe: describe,
-		Status:   status,
+		Name:      name,
+		Describe:  describe,
+		Status:    status,
+		DataScope: dataScope,
 	}
 	if err := model.DB.Create(&role).Error; err != nil {
 		return nil, ErrRoleCreate
@@ -99,7 +103,7 @@ func (s *AdminRoleService) Create(name, describe string, status int) (map[string
 }
 
 // Update 更新角色
-func (s *AdminRoleService) Update(id int, name, describe string, status int) (map[string]interface{}, error) {
+func (s *RoleService) Update(id int, name, describe string, status, dataScope int) (map[string]interface{}, error) {
 	if id <= 0 {
 		return nil, ErrRoleInvalidID
 	}
@@ -114,6 +118,7 @@ func (s *AdminRoleService) Update(id int, name, describe string, status int) (ma
 	}
 	updates["describe"] = describe
 	updates["status"] = status
+	updates["data_scope"] = dataScope
 
 	if err := model.DB.Model(&role).Updates(updates).Error; err != nil {
 		return nil, ErrRoleUpdate
@@ -123,12 +128,9 @@ func (s *AdminRoleService) Update(id int, name, describe string, status int) (ma
 }
 
 // Delete 删除角色
-func (s *AdminRoleService) Delete(id int) error {
+func (s *RoleService) Delete(id int) error {
 	if id <= 0 {
 		return ErrRoleInvalidID
 	}
-	if err := model.DB.Delete(&model.AdminRoles{}, id).Error; err != nil {
-		return ErrRoleDelete
-	}
-	return nil
+	return model.DB.Delete(&model.AdminRoles{}, id).Error
 }

@@ -2,34 +2,31 @@
 //
 // 用途:放在 AuthMiddleware 之后,校验当前用户对当前接口是否有权限
 //
-// 权限码生成规则(由 inferPermission):
+// 权限码规则:
+//   menu_code + ":" + operation_code
+//   例: "adminUsers:view" / "orders:import" / "users:batch_delete"
 //
-//	/api/system/adminUsers      POST  →  "adminUsers:add"
-//	/api/system/adminUsers/:id  GET   →  "adminUsers:view"
-//	/api/system/adminUsers/:id  PUT   →  "adminUsers:edit"
-//	/api/system/adminUsers/:id  DELETE → "adminUsers:delete"
+// 登录时由 auth_service.go 根据 admin_role_operations 表生成
+// 这里只做**粗粒度 fallback 推断**(URL → 权限码),保证没显式分配也能用基础 CRUD
 //
-// HTTP method → 操作名:
+// HTTP method + URL path 推断规则:
+//   GET    /api/system/{menu}[/{id}]              →  menu:view
+//   POST   /api/system/{menu}                     →  menu:add
+//   PUT    /api/system/{menu}/{id}                →  menu:edit
+//   DELETE /api/system/{menu}/{id}                →  menu:delete
+//   {ANY}   /api/system/{menu}/{op}               →  menu:op   (op 是子路径,如 import/export/batch_delete)
 //
-//	GET    → view
-//	POST   → add
-//	PUT    → edit
-//	DELETE → delete
+// 例外:
+//   /api/login /api/logout /api/user/info /api/upload/image
+//   这些是公开/已 AuthMiddleware 处理的,不需要 PermissionMiddleware
 //
-// URL 解析:
-//
-//	/api/{group}/{menu}[/{id}][/...]
-//	例子:/api/system/adminUsers/list
-//	  parts[1] = "system"   ← 第二段
-//	  parts[2] = "adminUsers" ← 菜单标识(取这个)
-//	例子:/api/system/adminMenus/options
-//	  parts[1] = "system"
-//	  parts[2] = "adminMenus"
-//
-// 必须放在 AuthMiddleware 之后(因为要从 gin.Context 读 permissions)
+// 加新权限码的流程:
+//   1. 后端:在 admin_menu_operations 表加一条操作(不需要改代码)
+//   2. 前端:前端自动从后端 dynamic 拿 operations,不用改代码
 package middleware
 
 import (
+	"strconv"
 	"strings"
 
 	"go_server/internal/handler"
@@ -72,54 +69,97 @@ func PermissionMiddleware() gin.HandlerFunc {
 	}
 }
 
-// pathToMenuCode 路由 path 段 → 菜单 code 映射
-// 用于 path 段跟 menu.Code 不一致的路由,推断时把 path 段映射成 menu.Code
-// 例: path /api/system/adminRoles/* 实际菜单 code 是 roleMenu
-var pathToMenuCode = map[string]string{
-	"adminRoles": "roleMenu",
-}
-
 // inferPermission 根据 HTTP method + URL path 推断权限码
 // 返回 "menu:operation" 格式,无法推断返回 ""
 func inferPermission(method, path string) string {
 	method = strings.ToUpper(method)
 
-	methodMap := map[string]string{
-		"GET":    "view",
-		"POST":   "add",
-		"PUT":    "edit",
-		"DELETE": "delete",
-	}
-
-	operation, ok := methodMap[method]
-	if !ok {
+	// 公开/特殊路径不参与推断(由路由组决定)
+	if isPublicPath(path) {
 		return ""
 	}
 
 	path = strings.TrimPrefix(path, "/api/")
-
 	parts := strings.Split(path, "/")
 	if len(parts) < 2 {
 		return ""
 	}
 
-	// URL结构: /system/adminUsers/list 或 /system/adminMenus/1
-	// parts[1] = "system" 是固定的
-	// parts[2] = 菜单标识 (adminUsers, adminMenus, adminRoles, roleMenu)
+	// 路由 /api/{group}/{menu}[/{id}][/...]
+	// parts[0] = "system"  (因为 /api/system/...)
+	// parts[1] = menu code
 	menu := parts[1]
 	if menu == "system" && len(parts) >= 3 {
 		menu = parts[2]
 	}
 
-	// 路由 path 段 → 菜单 code 映射
-	// 大多数 path 段 = menu.Code,但有些历史接口不一致
-	// 例: path 是 /api/system/adminRoles/*,但 menu.Code 是 roleMenu
-	// 跟 service 自动生成的权限码(roleMenu:view)对齐,前端也用 roleMenu:edit
-	if code, ok := pathToMenuCode[menu]; ok {
-		menu = code
+	// 标准 CRUD pattern:
+	//   /api/system/{menu}                  GET/POST
+	//   /api/system/{menu}/{id}             GET/PUT/DELETE
+	if len(parts) <= 4 && isStandardCRUD(parts) {
+		methodMap := map[string]string{
+			"GET":    "view",
+			"POST":   "add",
+			"PUT":    "edit",
+			"DELETE": "delete",
+		}
+		if op, ok := methodMap[method]; ok {
+			return menu + ":" + op
+		}
 	}
 
-	return menu + ":" + operation
+	// 特殊操作 pattern:
+	//   /api/system/{menu}/{op}[/...]       method 通常是 POST/GET
+	//   例: POST /api/system/adminUsers/import → adminUsers:import
+	if len(parts) >= 4 {
+		op := parts[3]
+		if op != "" && !isNumeric(op) {
+			return menu + ":" + op
+		}
+	}
+
+	return ""
+}
+
+// isStandardCRUD 判断是否是标准 CRUD pattern
+//   /api/system/{menu}                  → 1 段
+//   /api/system/{menu}/{id}             → 2 段(ID)
+func isStandardCRUD(parts []string) bool {
+	// parts[0] = "system"
+	// parts[1] = menu
+	// parts[2] = id 或空(POST 时)
+	// parts[3] = ?
+	if len(parts) == 3 {
+		// /api/system/{menu}  → POST 时 add,GET 时 view
+		return true
+	}
+	if len(parts) == 4 && isNumeric(parts[3]) {
+		// /api/system/{menu}/{id}  → GET/PUT/DELETE
+		return true
+	}
+	return false
+}
+
+// isNumeric 判断字符串是否是数字(ID)
+func isNumeric(s string) bool {
+	_, err := strconv.Atoi(s)
+	return err == nil
+}
+
+// isPublicPath 公开路径不参与权限推断
+func isPublicPath(path string) bool {
+	publicPaths := []string{
+		"/api/login",
+		"/api/logout",
+		"/api/user/info",
+		"/api/upload/image",
+	}
+	for _, p := range publicPaths {
+		if path == p {
+			return true
+		}
+	}
+	return false
 }
 
 // contains 简单的 slice contains

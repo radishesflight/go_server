@@ -51,8 +51,14 @@ func BuildMenuTree(menus []model.AdminMenus) []*MenuTreeNode {
 			roots = append(roots, node)
 		} else {
 			if parent, ok := nodeMap[m.ParentID]; ok {
-				// 继承父 path(子 path 已经是 "users/list" 形式,父 path 拼前面)
-				node.Path = parent.Path + strings.TrimPrefix(node.Path, "")
+				// 子 path 处理:
+				//   - 如果是绝对路径(以 / 开头)→ 保持原样(已经含完整路由,如 "/system/adminUsers")
+				//   - 如果是相对路径 → 拼上父 path(如 "users/list" → "/system/users/list")
+				if strings.HasPrefix(node.Path, "/") {
+					// 绝对路径,直接用,不要再拼父 path
+				} else {
+					node.Path = strings.TrimRight(parent.Path, "/") + "/" + strings.TrimLeft(node.Path, "/")
+				}
 				parent.Children = append(parent.Children, node)
 			} else {
 				// 孤儿节点(找不到 parent)挂根上

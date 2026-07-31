@@ -14,11 +14,13 @@ import (
 const TokenExpire = 24 * time.Hour
 
 type TokenData struct {
-	UserID      uint     `json:"user_id"`
-	Username    string   `json:"username"`
-	RoleID      uint     `json:"role_id"`
-	Menus       []Menu   `json:"menus"`
-	Permissions []string `json:"permissions"`
+	UserID       uint     `json:"user_id"`
+	Username     string   `json:"username"`
+	RoleID       uint     `json:"role_id"`
+	DataScope    int      `json:"data_scope"`     // 数据范围 0=全部 1=部门 2=自己
+	DepartmentID uint     `json:"department_id"`  // 所属部门(给"看部门"用)
+	Menus        []Menu   `json:"menus"`
+	Permissions  []string `json:"permissions"`
 }
 
 type Menu struct {
@@ -28,7 +30,7 @@ type Menu struct {
 	Icon string `json:"icon"`
 }
 
-func GenerateToken(userID uint, username string, roleID uint, menus []Menu, permissions []string) (string, error) {
+func GenerateToken(userID uint, username string, roleID uint, dataScope int, departmentID uint, menus []Menu, permissions []string) (string, error) {
 	token := uuid.New().String()
 	ctx := context.Background()
 
@@ -37,11 +39,13 @@ func GenerateToken(userID uint, username string, roleID uint, menus []Menu, perm
 
 	key := fmt.Sprintf("token:%s", token)
 	if err := model.RDB.HSet(ctx, key, map[string]interface{}{
-		"user_id":      userID,
-		"username":     username,
-		"role_id":      roleID,
-		"menus":        string(menusJSON),
-		"permissions":  string(permissionsJSON),
+		"user_id":       userID,
+		"username":      username,
+		"role_id":       roleID,
+		"data_scope":    dataScope,
+		"department_id": departmentID,
+		"menus":         string(menusJSON),
+		"permissions":   string(permissionsJSON),
 	}).Err(); err != nil {
 		return "", err
 	}
@@ -64,6 +68,8 @@ func ValidateToken(token string) (*TokenData, error) {
 
 	username, _ := model.RDB.HGet(ctx, key, "username").Result()
 	roleID, _ := model.RDB.HGet(ctx, key, "role_id").Uint64()
+	dataScope, _ := model.RDB.HGet(ctx, key, "data_scope").Int()
+	departmentID, _ := model.RDB.HGet(ctx, key, "department_id").Uint64()
 	menusStr, _ := model.RDB.HGet(ctx, key, "menus").Result()
 	permissionsStr, _ := model.RDB.HGet(ctx, key, "permissions").Result()
 
@@ -73,11 +79,13 @@ func ValidateToken(token string) (*TokenData, error) {
 	json.Unmarshal([]byte(permissionsStr), &permissions)
 
 	return &TokenData{
-		UserID:      uint(userID),
-		Username:    username,
-		RoleID:      uint(roleID),
-		Menus:       menus,
-		Permissions: permissions,
+		UserID:       uint(userID),
+		Username:     username,
+		RoleID:       uint(roleID),
+		DataScope:    dataScope,
+		DepartmentID: uint(departmentID),
+		Menus:        menus,
+		Permissions:  permissions,
 	}, nil
 }
 
