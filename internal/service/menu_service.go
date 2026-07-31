@@ -1,15 +1,10 @@
-// Package service admin_menu_service.go - 菜单管理业务
+// Package service menu_service.go - 菜单管理业务
 //
-// CRUD + SortInt(兼容前端传 string "10" 或 int 10)
-// 业务错误:
-//  ErrMenuInvalidID → 无效的 ID
-//  ErrMenuNotFound  → 菜单不存在
+// 替代旧的 admin_menu_service.go
+// 加了 operations 关联(每个菜单支持的操作)和 dataScope 字段
 //
-// SortInt 设计:前端可能用 el-input number 传 string,UnmarshalJSON 兼容
-//   "10" → 10
-//   10   → 10
-//   ""   → 0
-//   "abc" → 0
+// SortInt 兼容 string 和 int 的 JSON 解析
+//   "10" → 10 / 10 → 10 / "" → 0 / "abc" → 0
 package service
 
 import (
@@ -19,7 +14,6 @@ import (
 	"go_server/internal/model"
 )
 
-// 业务错误(与原 handler 中的错误文案对应)
 var (
 	ErrMenuInvalidID = errors.New("无效的菜单ID")
 	ErrMenuNotFound  = errors.New("菜单不存在")
@@ -29,7 +23,6 @@ var (
 )
 
 // SortInt 兼容 string 和 int 的 JSON 解析
-// (从原 handler/system/adminMenus.go 平移过来)
 type SortInt int
 
 func (s *SortInt) UnmarshalJSON(data []byte) error {
@@ -54,13 +47,12 @@ func trimQuotes(s string) string {
 	return s
 }
 
-// AdminMenuService 菜单管理业务
-type AdminMenuService struct{}
+// MenuService 菜单管理业务
+type MenuService struct{}
 
-// NewAdminMenuService 构造 AdminMenuService
-func NewAdminMenuService() *AdminMenuService { return &AdminMenuService{} }
+// NewMenuService 构造 MenuService
+func NewMenuService() *MenuService { return &MenuService{} }
 
-// formatMenu 把菜单 model 序列化成给前端的 map
 func formatMenu(menu model.AdminMenus) map[string]interface{} {
 	return map[string]interface{}{
 		"id":         menu.ID,
@@ -71,14 +63,27 @@ func formatMenu(menu model.AdminMenus) map[string]interface{} {
 		"parent_id":  menu.ParentID,
 		"sort":       menu.Sort,
 		"status":     menu.Status,
-		"buttons":    menu.Buttons,
+		"data_scope": menu.DataScope,
 		"created_at": model.FormatTime(menu.CreatedAt),
 		"updated_at": model.FormatTime(menu.UpdatedAt),
 	}
 }
 
+func formatOperation(op model.AdminMenuOperations) map[string]interface{} {
+	return map[string]interface{}{
+		"id":         op.ID,
+		"menu_id":    op.MenuID,
+		"code":       op.Code,
+		"name":       op.Name,
+		"icon":       op.Icon,
+		"sort":       op.Sort,
+		"created_at": model.FormatTime(op.CreatedAt),
+		"updated_at": model.FormatTime(op.UpdatedAt),
+	}
+}
+
 // GetList 分页查询菜单列表
-func (s *AdminMenuService) GetList(page, size, status int) ([]map[string]interface{}, int64, error) {
+func (s *MenuService) GetList(page, size, status int) ([]map[string]interface{}, int64, error) {
 	if page <= 0 {
 		page = 1
 	}
@@ -105,7 +110,7 @@ func (s *AdminMenuService) GetList(page, size, status int) ([]map[string]interfa
 }
 
 // Get 单条菜单
-func (s *AdminMenuService) Get(id int) (map[string]interface{}, error) {
+func (s *MenuService) Get(id int) (map[string]interface{}, error) {
 	if id <= 0 {
 		return nil, ErrMenuInvalidID
 	}
@@ -116,19 +121,55 @@ func (s *AdminMenuService) Get(id int) (map[string]interface{}, error) {
 	return formatMenu(menu), nil
 }
 
-// GetAll 所有菜单(sort DESC,与原 GetAllMenus 一致)
-func (s *AdminMenuService) GetAll() []map[string]interface{} {
+// GetAllWithOperations 返回所有菜单(带 operations)
+// 给"分配菜单"页面用
+func (s *MenuService) GetAllWithOperations() []map[string]interface{} {
 	var menus []model.AdminMenus
 	model.DB.Order("sort DESC").Find(&menus)
+
+	menuIDs := make([]uint, len(menus))
+	for i, m := range menus {
+		menuIDs[i] = m.ID
+	}
+
+	// 一次性查所有 operations
+	var ops []model.AdminMenuOperations
+	if len(menuIDs) > 0 {
+		model.DB.Where("menu_id IN ?", menuIDs).Order("sort asc").Find(&ops)
+	}
+
+	// 按 menu_id 分组
+	opsMap := make(map[uint][]model.AdminMenuOperations)
+	for _, op := range ops {
+		opsMap[op.MenuID] = append(opsMap[op.MenuID], op)
+	}
+
 	formatted := make([]map[string]interface{}, len(menus))
 	for i, m := range menus {
-		formatted[i] = formatMenu(m)
+		item := formatMenu(m)
+		item["operations"] = formatOperationsList(opsMap[m.ID])
+		formatted[i] = item
 	}
 	return formatted
 }
 
-// GetOptions parent_id=0 的菜单(id + name),给前端下拉用
-func (s *AdminMenuService) GetOptions() []map[string]interface{} {
+// GetOperationsByMenuID 查某菜单的所有 operation
+func (s *MenuService) GetOperationsByMenuID(menuID uint) []map[string]interface{} {
+	var ops []model.AdminMenuOperations
+	model.DB.Where("menu_id = ?", menuID).Order("sort asc").Find(&ops)
+	return formatOperationsList(ops)
+}
+
+func formatOperationsList(ops []model.AdminMenuOperations) []map[string]interface{} {
+	formatted := make([]map[string]interface{}, len(ops))
+	for i, op := range ops {
+		formatted[i] = formatOperation(op)
+	}
+	return formatted
+}
+
+// GetOptions parent_id=0 的菜单
+func (s *MenuService) GetOptions() []map[string]interface{} {
 	var menus []model.AdminMenus
 	model.DB.Where("parent_id = ?", 0).Order("sort asc").Find(&menus)
 	options := make([]map[string]interface{}, len(menus))
@@ -142,16 +183,16 @@ func (s *AdminMenuService) GetOptions() []map[string]interface{} {
 }
 
 // Create 创建菜单
-func (s *AdminMenuService) Create(name, code, path, icon, buttons string, parentID uint, sort int, status int) (map[string]interface{}, error) {
+func (s *MenuService) Create(name, code, path, icon string, parentID uint, sort, status, dataScope int) (map[string]interface{}, error) {
 	menu := model.AdminMenus{
-		Name:     name,
-		Code:     code,
-		Path:     path,
-		Icon:     icon,
-		ParentID: parentID,
-		Sort:     sort,
-		Status:   status,
-		Buttons:  buttons,
+		Name:      name,
+		Code:      code,
+		Path:      path,
+		Icon:      icon,
+		ParentID:  parentID,
+		Sort:      sort,
+		Status:    status,
+		DataScope: dataScope,
 	}
 	if err := model.DB.Create(&menu).Error; err != nil {
 		return nil, ErrMenuCreate
@@ -160,8 +201,7 @@ func (s *AdminMenuService) Create(name, code, path, icon, buttons string, parent
 }
 
 // Update 更新菜单
-// 注意:原 handler 对 Update 的更新字段是无条件覆盖(空字符串也会写入),保持一致
-func (s *AdminMenuService) Update(id int, name, code, path, icon, buttons string, parentID uint, sort int, status int) (map[string]interface{}, error) {
+func (s *MenuService) Update(id int, name, code, path, icon string, parentID uint, sort, status, dataScope int) (map[string]interface{}, error) {
 	if id <= 0 {
 		return nil, ErrMenuInvalidID
 	}
@@ -182,7 +222,7 @@ func (s *AdminMenuService) Update(id int, name, code, path, icon, buttons string
 	updates["parent_id"] = parentID
 	updates["sort"] = sort
 	updates["status"] = status
-	updates["buttons"] = buttons
+	updates["data_scope"] = dataScope
 
 	if err := model.DB.Model(&menu).Updates(updates).Error; err != nil {
 		return nil, ErrMenuUpdate
@@ -192,12 +232,9 @@ func (s *AdminMenuService) Update(id int, name, code, path, icon, buttons string
 }
 
 // Delete 删除菜单
-func (s *AdminMenuService) Delete(id int) error {
+func (s *MenuService) Delete(id int) error {
 	if id <= 0 {
 		return ErrMenuInvalidID
 	}
-	if err := model.DB.Delete(&model.AdminMenus{}, id).Error; err != nil {
-		return ErrMenuDelete
-	}
-	return nil
+	return model.DB.Delete(&model.AdminMenus{}, id).Error
 }

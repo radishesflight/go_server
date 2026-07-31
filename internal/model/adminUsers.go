@@ -8,12 +8,13 @@ import (
 
 type AdminUsers struct {
 	BaseModel
-	Username string `gorm:"uniqueIndex;size:50;not null" json:"username"`
-	Password string `gorm:"size:255;not null" json:"-"`
-	Email    string `gorm:"size:100" json:"email"`
-	Phone    string `gorm:"size:20" json:"phone"`
-	Status   int    `gorm:"default:1" json:"status"`
-	RoleID   uint   `gorm:"index" json:"role_id"`
+	Username     string `gorm:"uniqueIndex;size:50;not null" json:"username"`
+	Password     string `gorm:"size:255;not null" json:"-"`
+	Email        string `gorm:"size:100" json:"email"`
+	Phone        string `gorm:"size:20" json:"phone"`
+	Status       int    `gorm:"default:1" json:"status"`
+	RoleID       uint   `gorm:"index" json:"role_id"`
+	DepartmentID uint   `gorm:"index;default:0" json:"department_id"` // 所属部门(给"看部门"用)
 }
 
 func (AdminUsers) TableName() string {

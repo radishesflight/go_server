@@ -42,10 +42,13 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// 3. 注入上下文(供后续 handler 使用)
 		//    user_id / role_id:GetCurrentUser 用
+		//    data_scope / department_id:数据范围过滤用
 		//    menus / permissions:PermissionMiddleware 用
 		c.Set("user_id", tokenData.UserID)
 		c.Set("username", tokenData.Username)
 		c.Set("role_id", tokenData.RoleID)
+		c.Set("data_scope", tokenData.DataScope)
+		c.Set("department_id", tokenData.DepartmentID)
 		c.Set("menus", tokenData.Menus)
 		c.Set("permissions", tokenData.Permissions)
 

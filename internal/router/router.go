@@ -1,14 +1,15 @@
 // Package router - HTTP 路由注册
 //
 // 路由总览(/api 前缀):
-//   POST   /api/login                    公开
-//   POST   /api/logout                   公开
-//   GET    /api/user/info                需 AuthMiddleware
-//   POST   /api/upload/image             需 AuthMiddleware
-//   *      /api/system/adminUsers/*      需 Auth + Permission
-//   *      /api/system/adminRoles/*      需 Auth + Permission
-//   *      /api/system/adminMenus/*      需 Auth + Permission
-//   *      /api/system/roleMenus/*       需 Auth + Permission
+//   POST   /api/login                       公开
+//   POST   /api/logout                      公开
+//   GET    /api/user/info                   需 AuthMiddleware
+//   POST   /api/upload/image                需 AuthMiddleware
+//   *      /api/system/adminUsers/*         需 Auth + Permission
+//   *      /api/system/adminRoles/*         需 Auth + Permission(注意:路径段跟 menu.code 一致)
+//   *      /api/system/adminMenus/*         需 Auth + Permission
+//   *      /api/system/roleMenu/*           需 Auth + Permission
+//   *      /api/system/departments/*        需 Auth + Permission
 //
 // 加新路由组的步骤:
 //  1. 在 internal/router/system/ 加新文件(参考 adminUsers.go)
@@ -60,8 +61,10 @@ func SetupRouter(mode string) *gin.Engine {
 
 		// 系统管理(需登录 + 权限)
 		system.AdminUsersRoutes(api)
-		system.AdminRolesRoutes(api)
-		system.AdminMenusRoutes(api)
+		system.RoleRoutes(api)        // 角色管理
+		system.MenuRoutes(api)        // 菜单管理
+		system.RoleMenuRoutes(api)    // 角色-菜单-操作 分配
+		system.DepartmentRoutes(api)  // 部门管理
 	}
 
 	return r

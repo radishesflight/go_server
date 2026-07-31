@@ -1,15 +1,14 @@
-// Package system adminRoles.go - 角色管理 HTTP 入口
+// Package system role.go - 角色管理 HTTP 入口
+//
+// 替代旧的 adminRoles.go
+// 加了 dataScope 字段
 //
 // 接口列表:
-//  GET    /api/system/adminRoles/list          列表分页查询
-//  GET    /api/system/adminRoles/:id           单条查询
-//  POST   /api/system/adminRoles               新增
-//  PUT    /api/system/adminRoles/:id           更新
-//  DELETE /api/system/adminRoles/:id           删除
-//  GET    /api/system/adminRoles/roleMenus     查某角色的菜单 ID 列表
-//  GET    /api/system/adminRoles/roleMenusWithNames  查某角色的菜单名串
-//  GET    /api/system/adminRoles/rolePermissions  查某角色的权限码列表
-//  POST   /api/system/adminRoles/roleMenus     给某角色分配菜单+权限
+//  GET    /api/system/roles/list         列表分页查询
+//  GET    /api/system/roles/:id          单条查询
+//  POST   /api/system/roles              新增
+//  PUT    /api/system/roles/:id          更新
+//  DELETE /api/system/roles/:id          删除
 //
 // 业务码翻译表:
 //  service.ErrRoleNotFound      → CodeRoleNotFound    (1008)
@@ -26,41 +25,41 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// adminRoleSvc 角色管理业务入口
-var adminRoleSvc = service.NewAdminRoleService()
+// roleSvc 角色管理业务入口
+var roleSvc = service.NewRoleService()
 
-// AdminRolesQuery 列表查询参数
-type AdminRolesQuery struct {
+// RolesQuery 列表查询参数
+type RolesQuery struct {
 	Page   int `form:"page" json:"page"`
 	Size   int `form:"size" json:"size"`
 	Status int `form:"status" json:"status"`
 }
 
-// CreateAdminRolesReq 创建请求体
-type CreateAdminRolesReq struct {
-	Name     string `json:"name" binding:"required"` // 角色名(必填,唯一)
-	Describe string `json:"describe"`               // 描述
-	Status   int    `json:"status"`                  // 1=启用,0=禁用
+// CreateRoleReq 创建请求体
+type CreateRoleReq struct {
+	Name      string `json:"name" binding:"required"`
+	Describe  string `json:"describe"`
+	Status    int    `json:"status"`
+	DataScope int    `json:"data_scope"` // 0=全部 1=部门 2=自己
 }
 
-// UpdateAdminRolesReq 更新请求体
-// name 空字符串时不更新(保持原值);describe 无脑覆盖
-type UpdateAdminRolesReq struct {
-	Name     string `json:"name"`
-	Describe string `json:"describe"`
-	Status   int    `json:"status"`
+// UpdateRoleReq 更新请求体
+type UpdateRoleReq struct {
+	Name      string `json:"name"`
+	Describe  string `json:"describe"`
+	Status    int    `json:"status"`
+	DataScope int    `json:"data_scope"`
 }
 
-// GetAdminRolesList 分页查询角色列表
-func GetAdminRolesList(c *gin.Context) {
-	var query AdminRolesQuery
+// GetRolesList 分页查询角色列表
+func GetRolesList(c *gin.Context) {
+	var query RolesQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		handler.Error(c, handler.CodeParamsInvalid, "参数错误")
 		return
 	}
 
-	list, total, _ := adminRoleSvc.GetList(query.Page, query.Size, query.Status)
-
+	list, total, _ := roleSvc.GetList(query.Page, query.Size, query.Status)
 	handler.Success(c, gin.H{
 		"list":  list,
 		"total": total,
@@ -69,15 +68,15 @@ func GetAdminRolesList(c *gin.Context) {
 	})
 }
 
-// GetAdminRoles 单条角色
-func GetAdminRoles(c *gin.Context) {
+// GetRole 单条角色
+func GetRole(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		handler.Error(c, handler.CodeParamsInvalid, "无效的角色ID")
 		return
 	}
 
-	r, err := adminRoleSvc.Get(id)
+	r, err := roleSvc.Get(id)
 	if err != nil {
 		if errors.Is(err, service.ErrRoleNotFound) {
 			handler.Error(c, handler.CodeRoleNotFound, "角色不存在")
@@ -89,15 +88,15 @@ func GetAdminRoles(c *gin.Context) {
 	handler.Success(c, r)
 }
 
-// CreateAdminRoles 创建角色
-func CreateAdminRoles(c *gin.Context) {
-	var req CreateAdminRolesReq
+// CreateRole 创建角色
+func CreateRole(c *gin.Context) {
+	var req CreateRoleReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		handler.Error(c, handler.CodeParamsInvalid, "参数错误")
 		return
 	}
 
-	r, err := adminRoleSvc.Create(req.Name, req.Describe, req.Status)
+	r, err := roleSvc.Create(req.Name, req.Describe, req.Status, req.DataScope)
 	if err != nil {
 		if errors.Is(err, service.ErrRoleNameDuplicate) {
 			handler.Error(c, handler.CodeRoleDuplicate, "角色名称已存在")
@@ -109,21 +108,21 @@ func CreateAdminRoles(c *gin.Context) {
 	handler.Success(c, r)
 }
 
-// UpdateAdminRoles 更新角色
-func UpdateAdminRoles(c *gin.Context) {
+// UpdateRole 更新角色
+func UpdateRole(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		handler.Error(c, handler.CodeParamsInvalid, "无效的角色ID")
 		return
 	}
 
-	var req UpdateAdminRolesReq
+	var req UpdateRoleReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		handler.Error(c, handler.CodeParamsInvalid, "参数错误")
 		return
 	}
 
-	r, err := adminRoleSvc.Update(id, req.Name, req.Describe, req.Status)
+	r, err := roleSvc.Update(id, req.Name, req.Describe, req.Status, req.DataScope)
 	if err != nil {
 		if errors.Is(err, service.ErrRoleNotFound) {
 			handler.Error(c, handler.CodeRoleNotFound, "角色不存在")
@@ -135,15 +134,15 @@ func UpdateAdminRoles(c *gin.Context) {
 	handler.Success(c, r)
 }
 
-// DeleteAdminRoles 删除角色
-func DeleteAdminRoles(c *gin.Context) {
+// DeleteRole 删除角色
+func DeleteRole(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		handler.Error(c, handler.CodeParamsInvalid, "无效的角色ID")
 		return
 	}
 
-	if err := adminRoleSvc.Delete(id); err != nil {
+	if err := roleSvc.Delete(id); err != nil {
 		handler.Error(c, handler.CodeUnknown, "删除角色失败")
 		return
 	}

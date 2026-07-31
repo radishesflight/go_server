@@ -42,11 +42,19 @@ func main() {
 		logger.L.Info("数据库连接成功")
 		// 保留原行为:即使 AutoMigrate 失败也不退出(原代码忽略错误)
 		// 生产环境应该改用 migration 工具(详见 DEVELOPING.md)
-		if err := model.DB.AutoMigrate(&model.AdminRoles{}); err != nil {
-			logger.L.Error("AutoMigrate AdminRoles 失败", zap.Error(err))
+		models := []interface{}{
+			&model.AdminRoles{},
+			&model.AdminMenus{},
+			&model.AdminMenuOperations{},
+			&model.AdminRoleMenus{},
+			&model.AdminRoleOperations{},
+			&model.AdminUsers{},
+			&model.AdminDepartments{},
 		}
-		if err := model.DB.AutoMigrate(&model.AdminMenus{}); err != nil {
-			logger.L.Error("AutoMigrate AdminMenus 失败", zap.Error(err))
+		for _, m := range models {
+			if err := model.DB.AutoMigrate(m); err != nil {
+				logger.L.Error("AutoMigrate 失败", zap.Error(err))
+			}
 		}
 	}
 
