@@ -4,11 +4,11 @@
 // 加了 dataScope 字段
 //
 // 接口列表:
-//  GET    /api/system/roles/list         列表分页查询
-//  GET    /api/system/roles/:id          单条查询
-//  POST   /api/system/roles              新增
-//  PUT    /api/system/roles/:id          更新
-//  DELETE /api/system/roles/:id          删除
+//  GET    /api/system/adminRoles/list    列表分页查询
+//  GET    /api/system/adminRoles/:id     单条查询
+//  POST   /api/system/adminRoles         新增
+//  PUT    /api/system/adminRoles/:id     更新
+//  DELETE /api/system/adminRoles/:id     删除
 //
 // 业务码翻译表:
 //  service.ErrRoleNotFound      → CodeRoleNotFound    (1008)

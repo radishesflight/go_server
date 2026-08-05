@@ -5,7 +5,8 @@
 //  2. 批量 insert 新菜单关联
 //  3. 删 admin_role_operations 旧记录
 //  4. 批量 insert 新 role_operations(route_id)
-//  5. 异步删除该角色所有用户的 token(让他们重新登录拿新权限)
+//  5. 异步 bump 角色权限版本号 → 该角色所有用户的 token 在下次请求时自动懒重载
+//     (不用删 token,不用踢人,改完权限立刻生效)
 //
 // 新设计:不再拼"menu:op"权限码,只存路由 ID(route_id)
 //
@@ -21,7 +22,6 @@ package service
 
 import (
 	"errors"
-	"fmt"
 
 	"go_server/internal/model"
 	"go_server/pkg/cache"
@@ -29,7 +29,6 @@ import (
 
 var (
 	ErrRoleMenuRequireRole = errors.New("请选择角色")
-	ErrRoleMenuInvalidID   = errors.New("无效的角色ID")
 	ErrRoleMenuAssign      = errors.New("分配菜单失败")
 	ErrRolePermAssign      = errors.New("分配路由失败")
 )
@@ -128,6 +127,3 @@ func (s *RoleMenuService) AssignMenusAndOperations(roleID uint, menuIDs []uint, 
 
 	return nil
 }
-
-// 防 unused 警告(fmt 在新设计里没用,留接口以后报错信息可能用)
-var _ = fmt.Sprintf

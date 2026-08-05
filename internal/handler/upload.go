@@ -9,14 +9,15 @@
 // 大小限制:5MB(在 service 里 hard-coded)
 //
 // 业务码翻译表:
-//  service.ErrUploadNoFile          → CodeUploadInvalid
-//  service.ErrUploadUnsupportedExt  → CodeUploadType
-//  service.ErrUploadTooLarge        → CodeUploadSize
-//  service.ErrUploadOSSNotConfig    → CodeOSSNoConfig
-//  service.ErrUploadClient          → CodeOSSClient
-//  service.ErrUploadBucket          → CodeOSSBucket
-//  service.ErrUploadRead            → CodeUploadRead
-//  service.ErrUploadPut             → CodeUploadPut
+//
+//	service.ErrUploadNoFile          → CodeUploadInvalid
+//	service.ErrUploadUnsupportedExt  → CodeUploadType
+//	service.ErrUploadTooLarge        → CodeUploadSize
+//	service.ErrUploadOSSNotConfig    → CodeOSSNoConfig
+//	service.ErrUploadClient          → CodeOSSClient
+//	service.ErrUploadBucket          → CodeOSSBucket
+//	service.ErrUploadRead            → CodeUploadRead
+//	service.ErrUploadPut             → CodeUploadPut
 package handler
 
 import (
@@ -76,10 +77,4 @@ func UploadImage(c *gin.Context) {
 	Success(c, gin.H{
 		"url": url,
 	})
-}
-
-// DeleteFileFromOSS 从 OSS 删除文件
-// (保持原导出,业务逻辑已下沉到 service)
-func DeleteFileFromOSS(objectKey string) error {
-	return uploadSvc.DeleteFileFromOSS(objectKey)
 }

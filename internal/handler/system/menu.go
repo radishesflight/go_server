@@ -4,17 +4,25 @@
 // 加了 operations 关联查询接口
 //
 // 接口列表:
-//  GET    /api/system/menus/list              列表分页查询
-//  GET    /api/system/menus/all               所有菜单(带 operations)
-//  GET    /api/system/menus/options           父级菜单下拉选项
-//  GET    /api/system/menus/operations/:menu_id  某菜单的所有操作
-//  GET    /api/system/menus/:id               单条
-//  POST   /api/system/menus                   新增
-//  PUT    /api/system/menus/:id               更新
-//  DELETE /api/system/menus/:id               删除
+//
+//	GET    /api/system/adminMenus/list                    列表分页查询
+//	GET    /api/system/adminMenus/all                     所有菜单(带 operations)
+//	GET    /api/system/adminMenus/options                 父级菜单下拉选项
+//	GET    /api/system/adminMenus/operations/:menu_id     某菜单的所有 operation
+//	GET    /api/system/adminMenus/operations/get/:id      operation 单条
+//	POST   /api/system/adminMenus/operations              operation 新增
+//	PUT    /api/system/adminMenus/operations/:id          operation 更新
+//	DELETE /api/system/adminMenus/operations/:id          operation 删除
+//	GET    /api/system/adminMenus/:id                     单条
+//	POST   /api/system/adminMenus                         新增
+//	PUT    /api/system/adminMenus/:id                     更新
+//	DELETE /api/system/adminMenus/:id                     删除
 //
 // 业务码翻译表:
-//  service.ErrMenuNotFound → CodeMenuNotFound (1010)
+//
+//	service.ErrMenuNotFound      → CodeMenuNotFound (1010)
+//	service.ErrOperationNotFound → CodeMenuNotFound (1010,operation 复用)
+//	service.ErrOperationDuplicate → CodeParamsInvalid (4001)
 package system
 
 import (
