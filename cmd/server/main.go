@@ -19,6 +19,7 @@ import (
 	"go_server/config"
 	"go_server/internal/model"
 	"go_server/internal/router"
+	"go_server/internal/service"
 	"go_server/pkg/logger"
 )
 
@@ -67,6 +68,14 @@ func main() {
 
 	// 5. 注册所有路由(中间件 + handler)
 	r := router.SetupRouter(config.AppConfig.Server.Mode)
+
+	// 5.5 同步 gin 路由到 admin_menu_operations(加新接口不用手 INSERT 了)
+	//     超管角色 ID 默认 1(见 DEVELOPING.md)
+	if model.DB != nil {
+		if _, err := service.SyncRoutes(r, 1); err != nil {
+			logger.L.Error("SyncRoutes 失败", zap.Error(err))
+		}
+	}
 
 	// 6. 启动 HTTP server(阻塞,直到 r.Run 返回错误)
 	addr := fmt.Sprintf(":%d", config.AppConfig.Server.Port)

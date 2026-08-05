@@ -177,3 +177,125 @@ func DeleteMenu(c *gin.Context) {
 	}
 	handler.Success(c, nil)
 }
+
+// =====================================================
+// operation (admin_menu_operations) HTTP 入口
+// =====================================================
+//
+// 操作 = 一条具体的 (method, path) 权限元数据
+// 4 个 CRUD 接口,供"菜单管理 -> 操作"页面用
+
+// CreateOperationReq 创建 operation 请求体
+type CreateOperationReq struct {
+	MenuID uint   `json:"menu_id" binding:"required"`
+	Method string `json:"method" binding:"required"`
+	Path   string `json:"path" binding:"required"`
+	Name   string `json:"name"`
+	Sort   int    `json:"sort"`
+}
+
+// UpdateOperationReq 更新 operation 请求体
+type UpdateOperationReq struct {
+	MenuID uint   `json:"menu_id"`
+	Name   string `json:"name"`
+	Sort   int    `json:"sort"`
+}
+
+// GetOperation 单条 operation
+// GET /api/system/adminMenus/operations/get/:id
+func GetOperation(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		handler.Error(c, handler.CodeParamsInvalid, "无效的操作ID")
+		return
+	}
+	op, err := menuSvc.GetOperation(id)
+	if err != nil {
+		if errors.Is(err, service.ErrOperationNotFound) {
+			handler.Error(c, handler.CodeMenuNotFound, "操作不存在")
+		} else {
+			handler.Error(c, handler.CodeParamsInvalid, "无效的操作ID")
+		}
+		return
+	}
+	handler.Success(c, op)
+}
+
+// CreateOperation 新增 operation
+// POST /api/system/adminMenus/operations
+func CreateOperation(c *gin.Context) {
+	var req CreateOperationReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handler.Error(c, handler.CodeParamsInvalid, "参数错误")
+		return
+	}
+
+	op, err := menuSvc.CreateOperation(req.MenuID, req.Method, req.Path, req.Name, req.Sort)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrOperationDuplicate):
+			handler.Error(c, handler.CodeParamsInvalid, "该菜单下已存在相同的 (method, path) 操作")
+		case errors.Is(err, service.ErrMenuNotFound):
+			handler.Error(c, handler.CodeMenuNotFound, "菜单不存在")
+		case errors.Is(err, service.ErrMenuInvalidID), errors.Is(err, service.ErrOperationInvalid):
+			handler.Error(c, handler.CodeParamsInvalid, "参数错误")
+		default:
+			handler.Error(c, handler.CodeUnknown, "创建操作失败")
+		}
+		return
+	}
+	handler.Success(c, op)
+}
+
+// UpdateOperation 更新 operation
+// PUT /api/system/adminMenus/operations/:id
+func UpdateOperation(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		handler.Error(c, handler.CodeParamsInvalid, "无效的操作ID")
+		return
+	}
+
+	var req UpdateOperationReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handler.Error(c, handler.CodeParamsInvalid, "参数错误")
+		return
+	}
+
+	op, err := menuSvc.UpdateOperation(id, req.MenuID, req.Name, req.Sort)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrOperationNotFound):
+			handler.Error(c, handler.CodeMenuNotFound, "操作不存在")
+		case errors.Is(err, service.ErrOperationInvalid):
+			handler.Error(c, handler.CodeParamsInvalid, "无效的操作ID")
+		default:
+			handler.Error(c, handler.CodeUnknown, "更新操作失败")
+		}
+		return
+	}
+	handler.Success(c, op)
+}
+
+// DeleteOperation 删除 operation
+// DELETE /api/system/adminMenus/operations/:id
+func DeleteOperation(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		handler.Error(c, handler.CodeParamsInvalid, "无效的操作ID")
+		return
+	}
+
+	if err := menuSvc.DeleteOperation(id); err != nil {
+		switch {
+		case errors.Is(err, service.ErrOperationNotFound):
+			handler.Error(c, handler.CodeMenuNotFound, "操作不存在")
+		case errors.Is(err, service.ErrOperationInvalid):
+			handler.Error(c, handler.CodeParamsInvalid, "无效的操作ID")
+		default:
+			handler.Error(c, handler.CodeUnknown, "删除操作失败")
+		}
+		return
+	}
+	handler.Success(c, nil)
+}

@@ -25,5 +25,12 @@ func MenuRoutes(rg *gin.RouterGroup) {
 		menus.POST("", system.CreateMenu)
 		menus.PUT("/:id", system.UpdateMenu)
 		menus.DELETE("/:id", system.DeleteMenu)
+
+		// operation(admin_menu_operations)CRUD
+		// 路径段 /operations/* 跟 :id 不冲突(因为 :id 走的是数字 ID,operations 是固定前缀)
+		menus.GET("/operations/get/:id", system.GetOperation)
+		menus.POST("/operations", system.CreateOperation)
+		menus.PUT("/operations/:id", system.UpdateOperation)
+		menus.DELETE("/operations/:id", system.DeleteOperation)
 	}
 }

@@ -11,16 +11,24 @@ package service
 import (
 	"errors"
 	"strconv"
+	"strings"
 
 	"go_server/internal/model"
+	"go_server/pkg/cache"
 )
 
 var (
-	ErrMenuInvalidID = errors.New("无效的菜单ID")
-	ErrMenuNotFound  = errors.New("菜单不存在")
-	ErrMenuCreate    = errors.New("创建菜单失败")
-	ErrMenuUpdate    = errors.New("更新菜单失败")
-	ErrMenuDelete    = errors.New("删除菜单失败")
+	ErrMenuInvalidID      = errors.New("无效的菜单ID")
+	ErrMenuNotFound       = errors.New("菜单不存在")
+	ErrMenuCreate         = errors.New("创建菜单失败")
+	ErrMenuUpdate         = errors.New("更新菜单失败")
+	ErrMenuDelete         = errors.New("删除菜单失败")
+	ErrOperationInvalid   = errors.New("无效的操作ID")
+	ErrOperationNotFound  = errors.New("操作不存在")
+	ErrOperationCreate    = errors.New("创建操作失败")
+	ErrOperationUpdate    = errors.New("更新操作失败")
+	ErrOperationDelete    = errors.New("删除操作失败")
+	ErrOperationDuplicate = errors.New("该菜单下已存在相同的 (method, path) 操作")
 )
 
 // SortInt 兼容 string 和 int 的 JSON 解析
@@ -238,4 +246,125 @@ func (s *MenuService) Delete(id int) error {
 		return ErrMenuInvalidID
 	}
 	return model.DB.Delete(&model.AdminMenus{}, id).Error
+}
+
+// =====================================================
+// operation (admin_menu_operations) CRUD
+// =====================================================
+//
+// 一条 operation = (method, path) 一条具体接口的权限元数据
+// 由 admin_menu_operations 存储,role 通过 admin_role_operations 关联过来
+//
+// 加新接口的标准流程(现在可在前端页面完成,不用再 INSERT SQL):
+//  1. 后端在 router/system/xxx.go 加 route
+//  2. 重启服务,启动时 SyncRoutes 会自动把 (method, path) 同步到 admin_menu_operations
+//  3. 管理员在"菜单管理 -> 操作"面板里修改中文名 / sort
+//  4. 在"角色权限分配"里给需要的角色勾选
+
+// GetOperation 单条 operation
+func (s *MenuService) GetOperation(id int) (map[string]interface{}, error) {
+	if id <= 0 {
+		return nil, ErrOperationInvalid
+	}
+	var op model.AdminMenuOperations
+	if err := model.DB.First(&op, id).Error; err != nil {
+		return nil, ErrOperationNotFound
+	}
+	return formatRoute(op), nil
+}
+
+// CreateOperation 新增 operation
+// 同一 menu_id 下 (method, path) 唯一(uniqueIndex:idx_op_method_path)
+func (s *MenuService) CreateOperation(menuID uint, method, path, name string, sort int) (map[string]interface{}, error) {
+	if menuID == 0 {
+		return nil, ErrMenuInvalidID
+	}
+	if method == "" || path == "" {
+		return nil, ErrOperationInvalid
+	}
+
+	// 菜单存在性
+	var menu model.AdminMenus
+	if err := model.DB.First(&menu, menuID).Error; err != nil {
+		return nil, ErrMenuNotFound
+	}
+
+	op := model.AdminMenuOperations{
+		MenuID: menuID,
+		Method: method,
+		Path:   path,
+		Name:   name,
+		Sort:   sort,
+	}
+	if err := model.DB.Create(&op).Error; err != nil {
+		// 唯一索引冲突
+		if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "1062") {
+			return nil, ErrOperationDuplicate
+		}
+		return nil, ErrOperationCreate
+	}
+	return formatRoute(op), nil
+}
+
+// UpdateOperation 更新 operation(只能改 name / sort / menu_id,不改 method + path)
+func (s *MenuService) UpdateOperation(id int, menuID uint, name string, sort int) (map[string]interface{}, error) {
+	if id <= 0 {
+		return nil, ErrOperationInvalid
+	}
+	var op model.AdminMenuOperations
+	if err := model.DB.First(&op, id).Error; err != nil {
+		return nil, ErrOperationNotFound
+	}
+
+	updates := map[string]interface{}{}
+	if menuID > 0 && menuID != op.MenuID {
+		updates["menu_id"] = menuID
+	}
+	if name != "" {
+		updates["name"] = name
+	}
+	updates["sort"] = sort
+
+	if len(updates) > 0 {
+		if err := model.DB.Model(&op).Updates(updates).Error; err != nil {
+			return nil, ErrOperationUpdate
+		}
+	}
+	model.DB.First(&op, id)
+	return formatRoute(op), nil
+}
+
+// DeleteOperation 删除 operation
+// 同步删 admin_role_operations 里的关联(避免悬空 route_id)
+// 然后 bump 所有关联角色的权限版本(让相关用户的 token 懒重载)
+func (s *MenuService) DeleteOperation(id int) error {
+	if id <= 0 {
+		return ErrOperationInvalid
+	}
+	var op model.AdminMenuOperations
+	if err := model.DB.First(&op, id).Error; err != nil {
+		return ErrOperationNotFound
+	}
+
+	// 1. 找出哪些角色关联了这条 operation
+	var roleOps []model.AdminRoleOperations
+	model.DB.Where("route_id = ?", id).Find(&roleOps)
+	roleIDs := make(map[uint]struct{}, len(roleOps))
+	for _, ro := range roleOps {
+		roleIDs[ro.RoleID] = struct{}{}
+	}
+
+	// 2. 删角色关联
+	if err := model.DB.Where("route_id = ?", id).Delete(&model.AdminRoleOperations{}).Error; err != nil {
+		return ErrOperationDelete
+	}
+	// 3. 删 operation
+	if err := model.DB.Delete(&op).Error; err != nil {
+		return ErrOperationDelete
+	}
+	// 4. bump 这些角色的权限版本 → 在线用户下次请求懒重载
+	for rid := range roleIDs {
+		go cache.BumpVersion(rid)
+	}
+	return nil
 }

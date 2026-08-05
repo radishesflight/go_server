@@ -20,8 +20,10 @@ import (
 	"go_server/internal/handler"
 	"go_server/internal/service"
 	"go_server/pkg/cache"
+	"go_server/pkg/logger"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // authSvc 懒加载权限时用
@@ -61,8 +63,25 @@ func AuthMiddleware() gin.HandlerFunc {
 				permissions = newPerms
 				// 同步更新 token(下次就不需要再 reload 了)
 				cache.UpdateTokenMenusAndPermissions(token, menus, permissions, currentVersion)
+				logger.L.Info("perm cache reloaded (lazy)",
+					zap.Uint("user_id", tokenData.UserID),
+					zap.Uint("role_id", tokenData.RoleID),
+					zap.Uint64("token_version", tokenData.PermVersion),
+					zap.Uint64("current_version", currentVersion),
+					zap.Int("menus", len(menus)),
+					zap.Int("permissions", len(permissions)),
+					zap.String("path", c.FullPath()),
+				)
+			} else {
+				// reload 失败 → 降级用旧值,不阻断请求
+				logger.L.Warn("perm cache reload failed, fallback to token cache",
+					zap.Uint("user_id", tokenData.UserID),
+					zap.Uint("role_id", tokenData.RoleID),
+					zap.Uint64("token_version", tokenData.PermVersion),
+					zap.Uint64("current_version", currentVersion),
+					zap.Error(reloadErr),
+				)
 			}
-			// reload 失败 → 降级用旧值,不阻断请求
 		}
 
 		// 4. 注入上下文(供后续 handler 使用)
