@@ -51,6 +51,10 @@ func main() {
 			&model.AdminRoleOperations{},
 			&model.AdminUsers{},
 			&model.AdminDepartments{},
+			&model.CodeEndpoints{},
+			&model.BusinessProjects{},
+			&model.BusinessProjectEndpoints{},
+			&model.CodePackages{},
 		}
 		for _, m := range models {
 			if err := model.DB.AutoMigrate(m); err != nil {

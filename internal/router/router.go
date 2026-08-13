@@ -10,15 +10,17 @@
 //   *      /api/system/adminMenus/*         需 Auth + Permission
 //   *      /api/system/roleMenu/*           需 Auth + Permission
 //   *      /api/system/departments/*        需 Auth + Permission
+//   *      /api/codeDeploy/*                需 Auth(+Permission for projects/packages)
 //
 // 加新路由组的步骤:
-//  1. 在 internal/router/system/ 加新文件(参考 adminUsers.go)
+//  1. 在 internal/router/<module>/ 加新文件(参考 system/adminUsers.go)
 //  2. 在本文件加一行 xxRoutes(api)
 package router
 
 import (
 	"go_server/internal/handler"
 	"go_server/internal/middleware"
+	"go_server/internal/router/codeDeploy"
 	"go_server/internal/router/system"
 
 	"github.com/gin-gonic/gin"
@@ -61,10 +63,13 @@ func SetupRouter(mode string) *gin.Engine {
 
 		// 系统管理(需登录 + 权限)
 		system.AdminUsersRoutes(api)
-		system.RoleRoutes(api)        // 角色管理
-		system.MenuRoutes(api)        // 菜单管理
-		system.RoleMenuRoutes(api)    // 角色-菜单-操作 分配
-		system.DepartmentRoutes(api)  // 部门管理
+		system.RoleRoutes(api)       // 角色管理
+		system.MenuRoutes(api)       // 菜单管理
+		system.RoleMenuRoutes(api)   // 角色-菜单-操作 分配
+		system.DepartmentRoutes(api) // 部门管理
+
+		// 代码部署
+		codeDeploy.CodeDeployRoutes(api)
 	}
 
 	return r

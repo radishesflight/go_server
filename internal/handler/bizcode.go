@@ -1,12 +1,14 @@
 // Package handler 提供 HTTP 业务码常量
 //
 // 业务码规范(与前端 src/constants/bizcode.js 保持一致):
-//  0       成功
-//  1xxx    认证 / 账号 / 角色
-//  2xxx    权限
-//  3xxx    文件 / OSS
-//  4xxx    参数
-//  9xxx    通用 / 未分类
+//
+//	0       成功
+//	1xxx    认证 / 账号 / 角色
+//	2xxx    权限
+//	3xxx    文件 / OSS
+//	4xxx    参数
+//	5xxx    代码部署(codeDeploy 模块)
+//	9xxx    通用 / 未分类
 //
 // 加新业务码的流程:
 //  1. 在这里选合适段位加常量
@@ -49,6 +51,15 @@ const (
 
 	// 4xxx 参数
 	CodeParamsInvalid = 4001 // 参数错误(通用)
+
+	// 5xxx 代码部署(codeDeploy)
+	CodeEndpointNotFound  = 5001 // 端不存在
+	CodeProjectNotFound   = 5002 // 业务项目不存在
+	CodeProjectDuplicate  = 5003 // 业务项目 code 已存在
+	CodeProjectNoEndpoint = 5004 // 该项目下未配置任何端
+	CodePackageNotFound   = 5005 // 代码包不存在
+	CodePackageExtInvalid = 5006 // 文件扩展名与端不匹配
+	CodePackageTooLarge   = 5007 // 代码包超过大小限制(默认 200MB)
 
 	// 9xxx 通用
 	CodeUnknown = 9999 // 未分类失败

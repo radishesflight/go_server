@@ -52,6 +52,10 @@ func main() {
 	//    schema 可能跟新 model 不一致(比如旧表的 code 列还在),硬删表才能保证新 schema
 	//    先 drop 全部,再用 model 重新 create
 	tables := []interface{}{
+		&model.CodePackages{},
+		&model.BusinessProjectEndpoints{},
+		&model.BusinessProjects{},
+		&model.CodeEndpoints{},
 		&model.AdminRoleOperations{},
 		&model.AdminRoleMenus{},
 		&model.AdminMenuOperations{},
@@ -71,6 +75,18 @@ func main() {
 		}
 	}
 	fmt.Println("✓ drop + recreate 全部业务表(用最新 schema)")
+
+	// 2.5 端字典种子数据(苹果/安卓/前台web/后台web)
+	endpoints := []model.CodeEndpoints{
+		{BaseModel: model.BaseModel{ID: 1, CreatedAt: now, UpdatedAt: now}, Code: "ios", Name: "苹果", Ext: "apk", Icon: "Iphone", Sort: 10, Status: 1},
+		{BaseModel: model.BaseModel{ID: 2, CreatedAt: now, UpdatedAt: now}, Code: "android", Name: "安卓", Ext: "apk", Icon: "Cellphone", Sort: 20, Status: 1},
+		{BaseModel: model.BaseModel{ID: 3, CreatedAt: now, UpdatedAt: now}, Code: "web", Name: "前台web", Ext: "zip", Icon: "Monitor", Sort: 30, Status: 1},
+		{BaseModel: model.BaseModel{ID: 4, CreatedAt: now, UpdatedAt: now}, Code: "admin", Name: "后台web", Ext: "zip", Icon: "Setting", Sort: 40, Status: 1},
+	}
+	if err := db.Create(&endpoints).Error; err != nil {
+		log.Fatalf("插入端字典失败: %v", err)
+	}
+	fmt.Println("✓ 端字典:苹果 / 安卓 / 前台web / 后台web")
 
 	// 3. 部门
 	depts := []model.AdminDepartments{
