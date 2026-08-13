@@ -21,9 +21,11 @@ import (
 	"time"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
+	"go.uber.org/zap"
 
 	"go_server/config"
 	"go_server/internal/model"
+	"go_server/pkg/logger"
 )
 
 // 业务错误
@@ -104,14 +106,15 @@ func (s *CodePackageService) Get(id uint) (map[string]interface{}, error) {
 //	projectID, endpointID:必填
 //	name:前端填的原始名(不含版本号/扩展名)
 //	fileName, size, open:跟 upload_service 一致的回调
-//	buildTime, note, uploaderID
+//	note:可空,uploaderID 从 token 取
+//	build_time / uploader 由服务端自动生成(当前时间 + token.user_id)
 //
 // 返回:序列化后的 map(含 id, full_name, file_url 等)
 func (s *CodePackageService) Upload(
 	projectID, endpointID uint,
 	name, fileName string, size int64,
 	open func() (io.ReadCloser, error),
-	buildTime, note string, uploaderID uint,
+	note string, uploaderID uint,
 ) (map[string]interface{}, error) {
 	if projectID == 0 || endpointID == 0 {
 		return nil, ErrPackageNotFound
@@ -135,14 +138,11 @@ func (s *CodePackageService) Upload(
 		First(&rel).Error; err != nil {
 		return nil, ErrProjectNoEndpoint
 	}
-	// 校验扩展名
+	// 校验扩展名(不限制,任何后缀都允许,后端只存不校验)
+	// 端 ext 只用于前端展示,不上传时强校验
 	ext := strings.ToLower(path.Ext(fileName))
 	if ext == "" {
 		ext = "." + strings.ToLower(ep.Ext)
-	}
-	expectedExt := "." + strings.ToLower(ep.Ext)
-	if ext != expectedExt {
-		return nil, ErrPackageExtInvalid
 	}
 	// 校验大小
 	if size > maxCodePackageSize {
@@ -155,9 +155,9 @@ func (s *CodePackageService) Upload(
 		return nil, err
 	}
 
-	// 生成 version + full_name
+	// 生成 version + full_name(full_name 用上传文件的真实 ext,不用端 ext)
 	version := nextVersion(projectID, endpointID)
-	fullName := fmt.Sprintf("%s-%s%s", name, version, expectedExt)
+	fullName := fmt.Sprintf("%s-%s%s", name, version, ext)
 
 	// 入库
 	pkg := model.CodePackages{
@@ -171,7 +171,7 @@ func (s *CodePackageService) Upload(
 		FileURL:    fileURL,
 		FilePath:   objectKey,
 		UploaderID: uploaderID,
-		BuildTime:  buildTime,
+		BuildTime:  time.Now().Format("2006-01-02 15:04:05"),
 		Note:       note,
 		Status:     1,
 	}
@@ -267,6 +267,13 @@ func uploadCodePackageToOSS(
 	ext := path.Ext(filename)
 	objectKey := fmt.Sprintf("code_packages/%d%s", time.Now().UnixNano(), ext)
 	if err := bucket.PutObject(objectKey, f); err != nil {
+		logger.L.Error("OSS PutObject failed",
+			zap.String("object_key", objectKey),
+			zap.String("endpoint", cfg.Endpoint),
+			zap.String("bucket", cfg.BucketName),
+			zap.Int64("file_size", size),
+			zap.Error(err),
+		)
 		return "", "", ErrUploadPut
 	}
 

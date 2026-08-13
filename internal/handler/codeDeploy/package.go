@@ -22,7 +22,6 @@ import (
 	"errors"
 	"io"
 	"strconv"
-	"time"
 
 	"go_server/internal/handler"
 	"go_server/internal/service"
@@ -72,17 +71,14 @@ func GetPackage(c *gin.Context) {
 //   - project_id     必填
 //   - endpoint_id    必填
 //   - name           必填,前端填的原始名(不含版本号/扩展名)
-//   - build_time     可选,默认当前
 //   - note           可选
+//
+// 服务端自动生成:build_time = 当前时间,uploader_id = token.user_id
 func UploadPackage(c *gin.Context) {
 	projectID, _ := strconv.ParseUint(c.PostForm("project_id"), 10, 64)
 	endpointID, _ := strconv.ParseUint(c.PostForm("endpoint_id"), 10, 64)
 	name := c.PostForm("name")
-	buildTime := c.PostForm("build_time")
 	note := c.PostForm("note")
-	if buildTime == "" {
-		buildTime = time.Now().Format("2006-01-02 15:04:05")
-	}
 	if projectID == 0 || endpointID == 0 {
 		handler.Error(c, handler.CodeParamsInvalid, "请选择所属项目和端")
 		return
@@ -110,7 +106,7 @@ func UploadPackage(c *gin.Context) {
 		uint(projectID), uint(endpointID),
 		name, file.Filename, file.Size,
 		func() (io.ReadCloser, error) { return file.Open() },
-		buildTime, note, uploaderID,
+		note, uploaderID,
 	)
 	if err != nil {
 		translateUploadErr(c, err)
