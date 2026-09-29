@@ -5,12 +5,18 @@
 //   - 通过 business_project_endpoints 关联端字典
 //
 // 树查询:ListTree 返回嵌套结构 [{id, name, endpoints: [{id, name, ext, icon}]}]
+//
+// 数据来源:
+//   - CRUD(Create/Update/Delete):管理员手动维护
+//   - SyncFromJMS:从 JumpServer Core API 拉节点树,增量 upsert
+//     策略:按 code 匹配,JMS 新增 → INSERT,JMS 改名 → UPDATE name,JMS 消失 → 软删
 package service
 
 import (
 	"errors"
 
 	"go_server/internal/model"
+	"go_server/pkg/jumpserver"
 )
 
 // 业务错误
@@ -267,4 +273,136 @@ func (s *BusinessProjectService) setEndpoints(projectID uint, endpointIDs []uint
 		}
 	}
 	return tx.Commit().Error
+}
+
+// SyncResult JMS 同步结果统计
+type SyncResult struct {
+	Added      int `json:"added"`       // 新增(INSERT)
+	Updated    int `json:"updated"`     // 更新(改了 name)
+	Removed    int `json:"removed"`     // 软删(JMS 已下架)
+	TotalJMS   int `json:"total_jms"`   // JMS 过滤后返回的有效节点数
+	TotalLocal int `json:"total_local"` // 同步前本地表非软删记录数
+}
+
+// SyncFromJMS 从 JumpServer 同步业务项目(增量 upsert)
+//
+// 策略(按 code = JMS meta.data.id 匹配):
+//
+//	JMS 里有,本地没有   → INSERT
+//	JMS 里有,本地也有   → 名字变了则 UPDATE name(可能 JMS 改了名)
+//	JMS 里没有,本地有   → 软删(DeletedAt 置当前)
+//
+// 过滤规则(顺序很重要,先粗后细):
+//   - 跳过 meta.type != "node"(非组织节点,本接口基本不返回,留作防御)
+//   - 跳过 pId == "" 的根节点(树根"Default"在 zTree 里 pId 是空串)
+//     ⚠ 不能用 meta.data.id 是否为空判断根节点,根节点也有 data.id(是个 UUID)
+//
+// 注意:
+//   - 本函数会改 code,所以 business_projects.code 唯一索引会被利用做匹配
+//   - Description / Sort / Status 不会被 JMS 覆盖(保留人工设置)
+//   - 整个过程在一个事务里,失败回滚
+func (s *BusinessProjectService) SyncFromJMS(client *jumpserver.Client) (*SyncResult, error) {
+	nodes, err := client.GetNodeTree()
+	if err != nil {
+		return nil, err
+	}
+
+	// 1. 过滤有效节点
+	type kv struct{ code, name string }
+	valid := make([]kv, 0, len(nodes))
+	for _, n := range nodes {
+		if n.Meta.Type != "node" {
+			continue
+		}
+		// 根节点 pId 是空串(子节点的 pId 都是 "1" 即根的 zTree id)
+		if n.PID == "" {
+			continue
+		}
+		code := n.Meta.Data.ID
+		if code == "" {
+			continue
+		}
+		valid = append(valid, kv{code: code, name: n.Name})
+	}
+
+	// 2. 拉当前表所有非软删的(code, id, name)
+	type row struct {
+		ID   uint
+		Code string
+		Name string
+	}
+	var existing []row
+	if err := model.DB.Model(&model.BusinessProjects{}).
+		Select("id, code, name").
+		Scan(&existing).Error; err != nil {
+		return nil, err
+	}
+	existingByCode := make(map[string]row, len(existing))
+	for _, r := range existing {
+		existingByCode[r.Code] = r
+	}
+
+	jmsByCode := make(map[string]string, len(valid))
+	for _, v := range valid {
+		jmsByCode[v.code] = v.name
+	}
+
+	result := &SyncResult{
+		TotalJMS:   len(valid),
+		TotalLocal: len(existing),
+	}
+
+	// 3. 事务:INSERT / UPDATE / 软删
+	tx := model.DB.Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback()
+		}
+	}()
+
+	for code, name := range jmsByCode {
+		if r, ok := existingByCode[code]; ok {
+			// 已存在 → 仅在 name 变了时 UPDATE
+			if r.Name != name {
+				if err := tx.Model(&model.BusinessProjects{}).
+					Where("id = ?", r.ID).
+					Update("name", name).Error; err != nil {
+					return nil, err
+				}
+				result.Updated++
+			}
+		} else {
+			// 新增
+			proj := model.BusinessProjects{
+				Code:   code,
+				Name:   name,
+				Status: 1,
+				Sort:   0,
+			}
+			if err := tx.Create(&proj).Error; err != nil {
+				return nil, err
+			}
+			result.Added++
+		}
+	}
+
+	// 4. 软删:JMS 里没有的本地项目
+	for code, r := range existingByCode {
+		if _, ok := jmsByCode[code]; !ok {
+			if err := tx.Delete(&model.BusinessProjects{}, r.ID).Error; err != nil {
+				return nil, err
+			}
+			result.Removed++
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+	committed = true
+	return result, nil
 }

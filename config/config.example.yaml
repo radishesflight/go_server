@@ -46,3 +46,12 @@ aliyun:
     access_key_secret: "YOUR_ALIYUN_ACCESS_KEY_SECRET"
     bucket_name: "m-dys"
     bucket_domain: "https://m-dys.oss-cn-chengdu.aliyuncs.com"
+
+# JumpServer(代码部署模块的同步源)
+# 业务项目(business_projects)数据可从这里同步
+# 真实 Token 请放本地 config/config.yaml(已被 .gitignore 屏蔽)
+# 端点参考:GET {base_url}/api/v1/assets/nodes/children/tree/?assets=0&
+jumpserver:
+  base_url: "http://118.24.89.187:8081"
+  token: "YOUR_JUMPSERVER_TOKEN"
+  org_id: "00000000-0000-0000-0000-000000000002"

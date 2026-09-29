@@ -181,15 +181,87 @@ func (s *CodePackageService) Upload(
 	return formatPackage(pkg), nil
 }
 
-// Delete 软删除代码包(OSS 文件保留 — 后续做定时清理)
+// Delete 硬删除代码包 + 同步删 OSS
+// 策略:先硬删 DB,再删 OSS。OSS 删失败 log warning 但不返错(DB 已删,OSS 文件由定时任务兜底)
 func (s *CodePackageService) Delete(id uint) error {
 	if id == 0 {
 		return ErrPackageNotFound
 	}
-	if err := model.DB.Delete(&model.CodePackages{}, id).Error; err != nil {
+	var pkg model.CodePackages
+	if err := model.DB.First(&pkg, id).Error; err != nil {
+		return ErrPackageNotFound
+	}
+
+	// 硬删 DB(项目要求不使用软删,Unscoped 跳过 gorm.DeletedAt)
+	if err := model.DB.Unscoped().Delete(&pkg).Error; err != nil {
 		return ErrPackageDelete
 	}
+
+	// 再删 OSS(失败不返错,只 log)
+	if pkg.FilePath != "" {
+		if err := deleteObjectFromOSS(pkg.FilePath); err != nil {
+			logger.L.Warn("OSS DeleteObject failed after DB hard-delete",
+				zap.String("object_key", pkg.FilePath),
+				zap.Uint("package_id", id),
+				zap.Error(err),
+			)
+		}
+	}
 	return nil
+}
+
+// GetDownloadURL 生成 OSS 签名下载 URL(1小时有效,带 Content-Disposition: attachment)
+// 前端拿这个 URL 后用 <a download> 触发浏览器下载
+func (s *CodePackageService) GetDownloadURL(id uint) (string, error) {
+	if id == 0 {
+		return "", ErrPackageNotFound
+	}
+	var pkg model.CodePackages
+	if err := model.DB.First(&pkg, id).Error; err != nil {
+		return "", ErrPackageNotFound
+	}
+
+	cfg := config.AppConfig.Aliyun.OSS
+	if cfg.Endpoint == "" || cfg.AccessKeyID == "" || cfg.BucketName == "" {
+		return "", ErrUploadOSSNotConfig
+	}
+	client, err := oss.New(cfg.Endpoint, cfg.AccessKeyID, cfg.AccessKeySecret)
+	if err != nil {
+		return "", ErrUploadClient
+	}
+	bucket, err := client.Bucket(cfg.BucketName)
+	if err != nil {
+		return "", ErrUploadBucket
+	}
+
+	// 签名 URL + 强制 attachment,浏览器收到会下载而不是预览
+	signedURL, err := bucket.SignURL(
+		pkg.FilePath,
+		"GET",
+		3600,
+		oss.ResponseContentDisposition(`attachment; filename="`+pkg.FullName+`"`),
+	)
+	if err != nil {
+		return "", ErrUploadPut
+	}
+	return signedURL, nil
+}
+
+// deleteObjectFromOSS 从 OSS 删一个 object
+func deleteObjectFromOSS(objectKey string) error {
+	cfg := config.AppConfig.Aliyun.OSS
+	if cfg.Endpoint == "" || cfg.AccessKeyID == "" || cfg.BucketName == "" {
+		return errors.New("OSS 未配置")
+	}
+	client, err := oss.New(cfg.Endpoint, cfg.AccessKeyID, cfg.AccessKeySecret)
+	if err != nil {
+		return err
+	}
+	bucket, err := client.Bucket(cfg.BucketName)
+	if err != nil {
+		return err
+	}
+	return bucket.DeleteObject(objectKey)
 }
 
 // Pull 触发部署

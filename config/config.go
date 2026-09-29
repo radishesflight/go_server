@@ -34,11 +34,12 @@ var AppConfig *Config
 
 // Config 顶层配置
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	Redis    RedisConfig    `yaml:"redis"`
-	CORS     CORSConfig     `yaml:"cors"`
-	Aliyun   AliyunConfig   `yaml:"aliyun"`
+	Server     ServerConfig     `yaml:"server"`
+	Database   DatabaseConfig   `yaml:"database"`
+	Redis      RedisConfig      `yaml:"redis"`
+	CORS       CORSConfig       `yaml:"cors"`
+	Aliyun     AliyunConfig     `yaml:"aliyun"`
+	Jumpserver JumpserverConfig `yaml:"jumpserver"`
 }
 
 // ServerConfig HTTP 服务
@@ -85,6 +86,15 @@ type OSSConfig struct {
 	AccessKeySecret string `yaml:"access_key_secret"`
 	BucketName      string `yaml:"bucket_name"`
 	BucketDomain    string `yaml:"bucket_domain"`
+}
+
+// JumpserverConfig JumpServer Core API 配置
+// 用于代码部署模块从 JMS 同步业务项目节点树
+// 凭证可通过环境变量覆盖:JUMPSERVER_BASE_URL / JUMPSERVER_TOKEN / JUMPSERVER_ORG_ID
+type JumpserverConfig struct {
+	BaseURL string `yaml:"base_url"`
+	Token   string `yaml:"token"`
+	OrgID   string `yaml:"org_id"`
 }
 
 // InitConfig 从 yaml 加载配置,然后用环境变量覆盖
@@ -186,6 +196,17 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := os.Getenv("ALIYUN_OSS_BUCKET_DOMAIN"); v != "" {
 		c.Aliyun.OSS.BucketDomain = v
+	}
+
+	// jumpserver
+	if v := os.Getenv("JUMPSERVER_BASE_URL"); v != "" {
+		c.Jumpserver.BaseURL = v
+	}
+	if v := os.Getenv("JUMPSERVER_TOKEN"); v != "" {
+		c.Jumpserver.Token = v
+	}
+	if v := os.Getenv("JUMPSERVER_ORG_ID"); v != "" {
+		c.Jumpserver.OrgID = v
 	}
 }
 

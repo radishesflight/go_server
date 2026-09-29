@@ -164,3 +164,45 @@ func PullPackage(c *gin.Context) {
 	}
 	handler.Success(c, res)
 }
+
+// DeletePackage 删除代码包(软删 DB + 删 OSS)
+// DELETE /api/codeDeploy/packages/:id
+func DeletePackage(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		handler.Error(c, handler.CodeParamsInvalid, "无效的代码包ID")
+		return
+	}
+	if err := packageSvc.Delete(uint(id)); err != nil {
+		if errors.Is(err, service.ErrPackageNotFound) {
+			handler.Error(c, handler.CodePackageNotFound, "代码包不存在")
+		} else {
+			handler.Error(c, handler.CodeUnknown, "删除代码包失败")
+		}
+		return
+	}
+	handler.Success(c, nil)
+}
+
+// GetDownloadURL 返回 OSS 签名下载 URL(带 Content-Disposition: attachment)
+// GET /api/codeDeploy/packages/:id/download-url
+// 前端拿到 URL 后用 <a download> 触发浏览器下载
+func GetDownloadURL(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		handler.Error(c, handler.CodeParamsInvalid, "无效的代码包ID")
+		return
+	}
+	url, err := packageSvc.GetDownloadURL(uint(id))
+	if err != nil {
+		if errors.Is(err, service.ErrPackageNotFound) {
+			handler.Error(c, handler.CodePackageNotFound, "代码包不存在")
+		} else if errors.Is(err, service.ErrUploadOSSNotConfig) {
+			handler.Error(c, handler.CodeOSSNoConfig, "OSS 未配置")
+		} else {
+			handler.Error(c, handler.CodeUnknown, "获取下载链接失败")
+		}
+		return
+	}
+	handler.Success(c, url)
+}

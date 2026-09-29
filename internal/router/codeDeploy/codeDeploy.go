@@ -48,6 +48,7 @@ func CodeDeployRoutes(rg *gin.RouterGroup) {
 			projects.POST("", codeDeploy.CreateProject)
 			projects.PUT("/:id", codeDeploy.UpdateProject)
 			projects.DELETE("/:id", codeDeploy.DeleteProject)
+			projects.POST("/sync", codeDeploy.SyncProjects) // 从 JumpServer 同步
 		}
 
 		// 代码包(权限中间件先注释,流程通了再加回)
@@ -55,8 +56,10 @@ func CodeDeployRoutes(rg *gin.RouterGroup) {
 		{
 			pkgs.GET("", codeDeploy.ListPackages)
 			pkgs.GET("/:id", codeDeploy.GetPackage)
+			pkgs.GET("/:id/download-url", codeDeploy.GetDownloadURL)
 			pkgs.POST("", codeDeploy.UploadPackage)
 			pkgs.POST("/:id/pull", codeDeploy.PullPackage)
+			pkgs.DELETE("/:id", codeDeploy.DeletePackage)
 		}
 	}
 }
