@@ -64,6 +64,12 @@ func CodeDeployRoutes(rg *gin.RouterGroup) {
 		g.GET("/projects/:id/assets", codeDeploy.ListAssetsByProject)
 		g.POST("/assets/sync", codeDeploy.SyncAssets)
 
+		// 资产路径(每个资产可绑多个 Linux 目录,只描述意图不执行命令)
+		// 注意:/assets/:id/paths 要在 /assets/sync 之前注册,否则 :id=sync 冲突
+		g.GET("/assets/:id/paths", codeDeploy.ListAssetPaths)
+		g.POST("/assets/:id/paths", codeDeploy.AddAssetPath)
+		g.DELETE("/assets/paths/:id", codeDeploy.DeleteAssetPath)
+
 		// 一键同步:项目 + 资产 顺序执行(前端 1 个按钮)
 		g.POST("/sync", codeDeploy.SyncAll)
 	}

@@ -55,6 +55,7 @@ func main() {
 			&model.BusinessProjects{},
 			&model.BusinessProjectEndpoints{},
 			&model.BusinessAssets{},
+			&model.BusinessAssetPaths{},
 			&model.CodePackages{},
 		}
 		for _, m := range models {
