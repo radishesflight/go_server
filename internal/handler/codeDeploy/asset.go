@@ -3,6 +3,7 @@
 // 接口列表:
 //
 //	GET  /api/codeDeploy/projects/:id/assets   某项目下的所有资产
+//	GET  /api/codeDeploy/assets                全部启用的资产(代码拉取控制台选资产用)
 //	POST /api/codeDeploy/assets/sync           同步(从 JMS 拉,事务 upsert)
 //
 // 业务码翻译:
@@ -35,6 +36,17 @@ func ListAssetsByProject(c *gin.Context) {
 		return
 	}
 	list, err := assetSvc.ListByProject(uint(id))
+	if err != nil {
+		handler.Error(c, handler.CodeUnknown, "查询资产列表失败")
+		return
+	}
+	handler.Success(c, gin.H{"list": list})
+}
+
+// ListAssets 全部启用的资产(代码拉取控制台"选择资产"列表)
+// GET /api/codeDeploy/assets
+func ListAssets(c *gin.Context) {
+	list, err := assetSvc.ListAll()
 	if err != nil {
 		handler.Error(c, handler.CodeUnknown, "查询资产列表失败")
 		return

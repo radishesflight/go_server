@@ -73,6 +73,24 @@ func (s *BusinessAssetService) ListByProject(projectID uint) ([]map[string]inter
 	return out, nil
 }
 
+// ListAll 查所有启用(status=1)资产(代码拉取控制台"选择资产"列表用,不过滤项目)
+//
+// 注意:
+//   - 只取 status=1 的(已启用)
+//   - 按 project_id, id 排序(同项目聚在一起,翻找更直观)
+func (s *BusinessAssetService) ListAll() ([]map[string]interface{}, error) {
+	var assets []model.BusinessAssets
+	if err := model.DB.Where("status = ?", 1).
+		Order("project_id asc, id asc").Find(&assets).Error; err != nil {
+		return nil, ErrAssetSyncFail
+	}
+	out := make([]map[string]interface{}, len(assets))
+	for i, a := range assets {
+		out[i] = formatAsset(a)
+	}
+	return out, nil
+}
+
 // projectCodeToIDMap 查 (code, id) 映射,用于把 JMS asset.nodes[0].id 关联到本地 project.id
 func (s *BusinessAssetService) projectCodeToIDMap() (map[string]uint, error) {
 	var projects []model.BusinessProjects

@@ -62,6 +62,9 @@ func CodeDeployRoutes(rg *gin.RouterGroup) {
 
 		// 业务项目下的资产(从 JMS 同步)
 		g.GET("/projects/:id/assets", codeDeploy.ListAssetsByProject)
+		// 全部启用资产(代码拉取控制台"选择资产"列表)
+		// 必须在 /assets/:id/paths 之前注册,否则 :id 会吞掉 assets
+		g.GET("/assets", codeDeploy.ListAssets)
 		g.POST("/assets/sync", codeDeploy.SyncAssets)
 
 		// 资产路径(每个资产可绑多个 Linux 目录,只描述意图不执行命令)
