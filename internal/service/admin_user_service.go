@@ -2,11 +2,12 @@
 //
 // CRUD + 软删除;密码用 bcrypt 加密(在 SetPassword / CheckPassword 里)
 // 业务错误:
-//  ErrUserInvalidID       → 无效的 ID
-//  ErrUserNotFound        → 用户不存在
-//  ErrUserNameDuplicate   → 用户名已存在
-//  ErrUserPasswordHash    → 密码加密失败
-//  ErrUserCreate/Update/Delete → DB 操作失败
+//
+//	ErrUserInvalidID       → 无效的 ID
+//	ErrUserNotFound        → 用户不存在
+//	ErrUserNameDuplicate   → 用户名已存在
+//	ErrUserPasswordHash    → 密码加密失败
+//	ErrUserCreate/Update/Delete → DB 操作失败
 package service
 
 import (
@@ -152,7 +153,7 @@ func (s *AdminUserService) Delete(id int) error {
 	if id <= 0 {
 		return ErrUserInvalidID
 	}
-	if err := model.DB.Delete(&model.AdminUsers{}, id).Error; err != nil {
+	if err := model.DB.Unscoped().Delete(&model.AdminUsers{}, id).Error; err != nil {
 		return ErrUserDelete
 	}
 	return nil
