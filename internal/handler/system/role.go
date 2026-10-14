@@ -4,11 +4,12 @@
 //
 // 接口列表:
 //
-//	GET    /api/system/adminRoles/list    列表分页查询
-//	GET    /api/system/adminRoles/:id     单条查询
-//	POST   /api/system/adminRoles         新增
-//	PUT    /api/system/adminRoles/:id     更新
-//	DELETE /api/system/adminRoles/:id     删除
+//	GET    /api/system/adminRoles/list       列表分页查询(需 Permission)
+//	GET    /api/system/adminRoles/options    角色下拉(只需 Auth,所有登录用户可调)
+//	GET    /api/system/adminRoles/:id        单条查询
+//	POST   /api/system/adminRoles            新增
+//	PUT    /api/system/adminRoles/:id        更新
+//	DELETE /api/system/adminRoles/:id        删除
 //
 // 业务码翻译表:
 //
@@ -146,4 +147,16 @@ func DeleteRole(c *gin.Context) {
 		return
 	}
 	handler.Success(c, nil)
+}
+
+// GetRoleOptions 角色下拉选项(只需 Auth,所有登录用户可调)
+//
+// 用场景:
+//   - "管理员管理"页面表格里"角色"列要展示所有启用的角色名(下拉/显示),
+//     不应该强制要求调用方拥有"角色管理"权限。
+//
+// 返回:[{id, name}, ...] status=1 升序
+func GetRoleOptions(c *gin.Context) {
+	list := roleSvc.GetOptions()
+	handler.Success(c, list)
 }

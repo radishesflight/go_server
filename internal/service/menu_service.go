@@ -177,10 +177,13 @@ func formatRoutesList(routes []model.AdminMenuOperations) []map[string]interface
 	return formatted
 }
 
-// GetOptions parent_id=0 的菜单
+// GetOptions 父级菜单下拉选项(parent_id=0 且 status=1)
+//
+// 用途:菜单管理"新增/编辑"页面选父级菜单。
+// 当前路由走 AuthMiddleware(任何登录用户都能调)。
 func (s *MenuService) GetOptions() []map[string]interface{} {
 	var menus []model.AdminMenus
-	model.DB.Where("parent_id = ?", 0).Order("sort asc").Find(&menus)
+	model.DB.Where("parent_id = ? AND status = ?", 0, 1).Order("sort asc").Find(&menus)
 	options := make([]map[string]interface{}, len(menus))
 	for i, m := range menus {
 		options[i] = map[string]interface{}{

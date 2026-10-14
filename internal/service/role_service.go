@@ -4,9 +4,10 @@
 //
 // CRUD + 软删除
 // 业务错误:
-//  ErrRoleInvalidID      → 无效的 ID
-//  ErrRoleNotFound       → 角色不存在
-//  ErrRoleNameDuplicate  → 角色名重复
+//
+//	ErrRoleInvalidID      → 无效的 ID
+//	ErrRoleNotFound       → 角色不存在
+//	ErrRoleNameDuplicate  → 角色名重复
 package service
 
 import (
@@ -129,4 +130,24 @@ func (s *RoleService) Delete(id int) error {
 		return ErrRoleInvalidID
 	}
 	return model.DB.Delete(&model.AdminRoles{}, id).Error
+}
+
+// GetOptions 返回所有 status=1 的角色(id + name),给"管理员管理"等页面下拉用
+//
+// 注意:这个方法**没有权限校验**,只查启用的角色名 + id,
+// 任何登录用户(已通过 AuthMiddleware)都能调。
+// 路由注册在 router.go 上**只挂 AuthMiddleware**,不挂 PermissionMiddleware。
+func (s *RoleService) GetOptions() []map[string]interface{} {
+	var roles []model.AdminRoles
+	// status=1(启用) + 软删过滤(GORM 默认)
+	model.DB.Where("status = ?", 1).Order("id asc").Find(&roles)
+
+	formatted := make([]map[string]interface{}, len(roles))
+	for i, r := range roles {
+		formatted[i] = map[string]interface{}{
+			"id":   r.ID,
+			"name": r.Name,
+		}
+	}
+	return formatted
 }

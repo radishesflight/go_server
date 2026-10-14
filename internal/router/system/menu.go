@@ -3,6 +3,10 @@
 // 替代旧的 adminMenus.go
 // 路由组: /api/system/adminMenus(注意:路径段跟 menu.code 一致,中间件推断 adminMenus:*)
 // 加了 /operations/:menu_id 用于查某菜单的所有 operation
+//
+// /options 单独挂 AuthMiddleware,不挂 PermissionMiddleware:
+//
+//	用于"菜单管理 -> 新增/编辑"页面的"父级菜单"下拉,任何登录用户都能调(不分菜单管理权限)。
 package system
 
 import (
@@ -14,12 +18,15 @@ import (
 
 // MenuRoutes 菜单管理路由
 func MenuRoutes(rg *gin.RouterGroup) {
+	// 公开下拉接口:只需登录,不查权限
+	rg.GET("/system/adminMenus/options", middleware.AuthMiddleware(), system.GetMenusOptions)
+
+	// 菜单管理主路由(需要 PermissionMiddleware 校验)
 	menus := rg.Group("/system/adminMenus")
 	menus.Use(middleware.AuthMiddleware(), middleware.PermissionMiddleware())
 	{
 		menus.GET("/list", system.GetMenusList)
 		menus.GET("/all", system.GetAllMenus)
-		menus.GET("/options", system.GetMenusOptions)
 		menus.GET("/operations/:menu_id", system.GetMenuOperations)
 		menus.GET("/:id", system.GetMenu)
 		menus.POST("", system.CreateMenu)
