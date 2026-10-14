@@ -77,7 +77,7 @@ func (s *AuthService) Login(username, password string) (string, gin.H, []*MenuTr
 	}
 	menuList := BuildMenuTree(menus)
 
-	// 2. 查 role.data_scope(角色级数据范围)
+	// 2. 拉平菜单(token 里缓存用)
 	flatMenus := make([]cache.Menu, 0)
 	for _, m := range menus {
 		flatMenus = append(flatMenus, cache.Menu{
@@ -94,8 +94,8 @@ func (s *AuthService) Login(username, password string) (string, gin.H, []*MenuTr
 		return "", nil, nil, nil, err
 	}
 
-	// 4. 生成 token(带 dataScope + departmentID,业务层过滤用)
-	token, err := cache.GenerateToken(user.ID, user.Username, user.RoleID, role.DataScope, user.DepartmentID, flatMenus, permissions)
+	// 4. 生成 token(带 departmentID,业务层过滤用)
+	token, err := cache.GenerateToken(user.ID, user.Username, user.RoleID, user.DepartmentID, flatMenus, permissions)
 	if err != nil {
 		return "", nil, nil, nil, ErrAuthTokenGenFailed
 	}
@@ -109,7 +109,6 @@ func (s *AuthService) Login(username, password string) (string, gin.H, []*MenuTr
 		"role_id":       user.RoleID,
 		"role":          role.Name,
 		"department_id": user.DepartmentID,
-		"data_scope":    role.DataScope,
 	}, menuList, permissions, nil
 }
 
@@ -140,7 +139,6 @@ func (s *AuthService) GetCurrentUser(userID, roleID uint) (gin.H, []*MenuTreeNod
 		"role_id":       user.RoleID,
 		"role":          role.Name,
 		"department_id": user.DepartmentID,
-		"data_scope":    role.DataScope,
 	}, menuList, permissions, nil
 }
 

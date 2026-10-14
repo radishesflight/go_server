@@ -1,6 +1,4 @@
-// Package system roleMenu.go - 角色菜单权限分配 HTTP 入口
-//
-// 替代旧的 roleMenu.go(同包内,内容全重写)
+// Package system role_menu.go - 角色菜单权限分配 HTTP 入口
 //
 // 接口列表:
 //

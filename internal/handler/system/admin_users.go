@@ -1,16 +1,18 @@
-// Package system adminUsers.go - 管理员(用户)管理 HTTP 入口
+// Package system admin_users.go - 管理员(用户)管理 HTTP 入口
 //
 // 接口列表:
-//  GET    /api/system/adminUsers/list  列表分页查询
-//  GET    /api/system/adminUsers/:id   单条查询
-//  POST   /api/system/adminUsers       新增
-//  PUT    /api/system/adminUsers/:id   更新
-//  DELETE /api/system/adminUsers/:id   删除(软删除)
+//
+//	GET    /api/system/adminUsers/list  列表分页查询
+//	GET    /api/system/adminUsers/:id   单条查询
+//	POST   /api/system/adminUsers       新增
+//	PUT    /api/system/adminUsers/:id   更新
+//	DELETE /api/system/adminUsers/:id   删除(软删除)
 //
 // 业务码翻译表(与 internal/handler/bizcode.go 一致):
-//  service.ErrUserNotFound      → CodeUserNotFound   (1004)
-//  service.ErrUserNameDuplicate → CodeUserDuplicate  (1005)
-//  service.ErrUserPasswordHash  → CodeUnknown        (9999,内部错误)
+//
+//	service.ErrUserNotFound      → CodeUserNotFound   (1004)
+//	service.ErrUserNameDuplicate → CodeUserDuplicate  (1005)
+//	service.ErrUserPasswordHash  → CodeUnknown        (9999,内部错误)
 //
 // 角色下拉数据来源:调 getAdminRolesList 接口(/api/system/adminRoles/list)
 package system
@@ -39,10 +41,10 @@ type AdminUsersQuery struct {
 type CreateAdminUsersReq struct {
 	Username string `json:"username" binding:"required"` // 用户名(必填,唯一)
 	Password string `json:"password" binding:"required"` // 密码(必填,会被 bcrypt 加密)
-	Email    string `json:"email"`                      // 邮箱(可选)
-	Phone    string `json:"phone"`                      // 手机号(可选)
-	Status   int    `json:"status"`                     // 状态(1=启用,0=禁用)
-	RoleID   uint   `json:"role_id"`                    // 角色 ID(可选,0=未分配)
+	Email    string `json:"email"`                       // 邮箱(可选)
+	Phone    string `json:"phone"`                       // 手机号(可选)
+	Status   int    `json:"status"`                      // 状态(1=启用,0=禁用)
+	RoleID   uint   `json:"role_id"`                     // 角色 ID(可选,0=未分配)
 }
 
 // UpdateAdminUsersReq 更新请求体

@@ -1,4 +1,4 @@
-// Package system roleMenu.go - 角色菜单权限分配路由
+// Package system role_menu.go - 角色菜单权限分配路由
 //
 // 路由组: /api/system/roleMenu
 // 中间件校验:直接从 token 的 permissions 集合(每项 = "METHOD /path")查 c.Request.Method + " " + c.FullPath()

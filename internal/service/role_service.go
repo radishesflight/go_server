@@ -1,7 +1,6 @@
 // Package service role_service.go - 角色管理业务
 //
 // 替代旧的 admin_role_service.go
-// 加了 dataScope 字段(数据范围权限)
 //
 // CRUD + 软删除
 // 业务错误:
@@ -38,7 +37,6 @@ func formatRole(role model.AdminRoles) map[string]interface{} {
 		"name":       role.Name,
 		"describe":   role.Describe,
 		"status":     role.Status,
-		"data_scope": role.DataScope, // 0=全部 1=部门 2=自己
 		"created_at": model.FormatTime(role.CreatedAt),
 		"updated_at": model.FormatTime(role.UpdatedAt),
 	}
@@ -83,18 +81,17 @@ func (s *RoleService) Get(id int) (map[string]interface{}, error) {
 	return formatRole(role), nil
 }
 
-// Create 创建角色(dataScope: 0=全部 1=部门 2=自己)
-func (s *RoleService) Create(name, describe string, status, dataScope int) (map[string]interface{}, error) {
+// Create 创建角色
+func (s *RoleService) Create(name, describe string, status int) (map[string]interface{}, error) {
 	var existing model.AdminRoles
 	if err := model.DB.Where("name = ?", name).First(&existing).Error; err == nil {
 		return nil, ErrRoleNameDuplicate
 	}
 
 	role := model.AdminRoles{
-		Name:      name,
-		Describe:  describe,
-		Status:    status,
-		DataScope: dataScope,
+		Name:     name,
+		Describe: describe,
+		Status:   status,
 	}
 	if err := model.DB.Create(&role).Error; err != nil {
 		return nil, ErrRoleCreate
@@ -103,7 +100,7 @@ func (s *RoleService) Create(name, describe string, status, dataScope int) (map[
 }
 
 // Update 更新角色
-func (s *RoleService) Update(id int, name, describe string, status, dataScope int) (map[string]interface{}, error) {
+func (s *RoleService) Update(id int, name, describe string, status int) (map[string]interface{}, error) {
 	if id <= 0 {
 		return nil, ErrRoleInvalidID
 	}
@@ -118,7 +115,6 @@ func (s *RoleService) Update(id int, name, describe string, status, dataScope in
 	}
 	updates["describe"] = describe
 	updates["status"] = status
-	updates["data_scope"] = dataScope
 
 	if err := model.DB.Model(&role).Updates(updates).Error; err != nil {
 		return nil, ErrRoleUpdate

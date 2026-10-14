@@ -101,8 +101,8 @@ func main() {
 
 	// 4. 角色
 	roles := []model.AdminRoles{
-		{BaseModel: model.BaseModel{ID: 1, CreatedAt: now, UpdatedAt: now}, Name: "超级管理员", Describe: "拥有所有权限", Status: 1, DataScope: 0},
-		{BaseModel: model.BaseModel{ID: 2, CreatedAt: now, UpdatedAt: now}, Name: "测试员", Describe: "测试用角色", Status: 1, DataScope: 0},
+		{BaseModel: model.BaseModel{ID: 1, CreatedAt: now, UpdatedAt: now}, Name: "超级管理员", Describe: "拥有所有权限", Status: 1},
+		{BaseModel: model.BaseModel{ID: 2, CreatedAt: now, UpdatedAt: now}, Name: "测试员", Describe: "测试用角色", Status: 1},
 	}
 	if err := db.Create(&roles).Error; err != nil {
 		log.Fatalf("插入角色失败: %v", err)

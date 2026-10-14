@@ -1,18 +1,19 @@
 // Package system role.go - 角色管理 HTTP 入口
 //
 // 替代旧的 adminRoles.go
-// 加了 dataScope 字段
 //
 // 接口列表:
-//  GET    /api/system/adminRoles/list    列表分页查询
-//  GET    /api/system/adminRoles/:id     单条查询
-//  POST   /api/system/adminRoles         新增
-//  PUT    /api/system/adminRoles/:id     更新
-//  DELETE /api/system/adminRoles/:id     删除
+//
+//	GET    /api/system/adminRoles/list    列表分页查询
+//	GET    /api/system/adminRoles/:id     单条查询
+//	POST   /api/system/adminRoles         新增
+//	PUT    /api/system/adminRoles/:id     更新
+//	DELETE /api/system/adminRoles/:id     删除
 //
 // 业务码翻译表:
-//  service.ErrRoleNotFound      → CodeRoleNotFound    (1008)
-//  service.ErrRoleNameDuplicate → CodeRoleDuplicate   (1009)
+//
+//	service.ErrRoleNotFound      → CodeRoleNotFound    (1008)
+//	service.ErrRoleNameDuplicate → CodeRoleDuplicate   (1009)
 package system
 
 import (
@@ -37,18 +38,16 @@ type RolesQuery struct {
 
 // CreateRoleReq 创建请求体
 type CreateRoleReq struct {
-	Name      string `json:"name" binding:"required"`
-	Describe  string `json:"describe"`
-	Status    int    `json:"status"`
-	DataScope int    `json:"data_scope"` // 0=全部 1=部门 2=自己
+	Name     string `json:"name" binding:"required"`
+	Describe string `json:"describe"`
+	Status   int    `json:"status"`
 }
 
 // UpdateRoleReq 更新请求体
 type UpdateRoleReq struct {
-	Name      string `json:"name"`
-	Describe  string `json:"describe"`
-	Status    int    `json:"status"`
-	DataScope int    `json:"data_scope"`
+	Name     string `json:"name"`
+	Describe string `json:"describe"`
+	Status   int    `json:"status"`
 }
 
 // GetRolesList 分页查询角色列表
@@ -96,7 +95,7 @@ func CreateRole(c *gin.Context) {
 		return
 	}
 
-	r, err := roleSvc.Create(req.Name, req.Describe, req.Status, req.DataScope)
+	r, err := roleSvc.Create(req.Name, req.Describe, req.Status)
 	if err != nil {
 		if errors.Is(err, service.ErrRoleNameDuplicate) {
 			handler.Error(c, handler.CodeRoleDuplicate, "角色名称已存在")
@@ -122,7 +121,7 @@ func UpdateRole(c *gin.Context) {
 		return
 	}
 
-	r, err := roleSvc.Update(id, req.Name, req.Describe, req.Status, req.DataScope)
+	r, err := roleSvc.Update(id, req.Name, req.Describe, req.Status)
 	if err != nil {
 		if errors.Is(err, service.ErrRoleNotFound) {
 			handler.Error(c, handler.CodeRoleNotFound, "角色不存在")

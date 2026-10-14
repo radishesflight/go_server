@@ -88,7 +88,6 @@ func AuthMiddleware() gin.HandlerFunc {
 		c.Set("user_id", tokenData.UserID)
 		c.Set("username", tokenData.Username)
 		c.Set("role_id", tokenData.RoleID)
-		c.Set("data_scope", tokenData.DataScope)
 		c.Set("department_id", tokenData.DepartmentID)
 		c.Set("menus", menus)
 		c.Set("permissions", permissions)

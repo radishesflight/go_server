@@ -25,7 +25,6 @@ type TokenData struct {
 	UserID       uint     `json:"user_id"`
 	Username     string   `json:"username"`
 	RoleID       uint     `json:"role_id"`
-	DataScope    int      `json:"data_scope"`
 	DepartmentID uint     `json:"department_id"`
 	Menus        []Menu   `json:"menus"`
 	Permissions  []string `json:"permissions"`
@@ -41,7 +40,7 @@ type Menu struct {
 
 // GenerateToken 生成 token 并写 Redis
 // 自动 init 角色权限版本号,记录到 token 里
-func GenerateToken(userID uint, username string, roleID uint, dataScope int, departmentID uint, menus []Menu, permissions []string) (string, error) {
+func GenerateToken(userID uint, username string, roleID uint, departmentID uint, menus []Menu, permissions []string) (string, error) {
 	token := uuid.New().String()
 	ctx := context.Background()
 
@@ -56,7 +55,6 @@ func GenerateToken(userID uint, username string, roleID uint, dataScope int, dep
 		"user_id":       userID,
 		"username":      username,
 		"role_id":       roleID,
-		"data_scope":    dataScope,
 		"department_id": departmentID,
 		"menus":         string(menusJSON),
 		"permissions":   string(permissionsJSON),
@@ -84,7 +82,6 @@ func ValidateToken(token string) (*TokenData, error) {
 
 	username, _ := model.RDB.HGet(ctx, key, "username").Result()
 	roleID, _ := model.RDB.HGet(ctx, key, "role_id").Uint64()
-	dataScope, _ := model.RDB.HGet(ctx, key, "data_scope").Int()
 	departmentID, _ := model.RDB.HGet(ctx, key, "department_id").Uint64()
 	menusStr, _ := model.RDB.HGet(ctx, key, "menus").Result()
 	permissionsStr, _ := model.RDB.HGet(ctx, key, "permissions").Result()
@@ -99,7 +96,6 @@ func ValidateToken(token string) (*TokenData, error) {
 		UserID:       uint(userID),
 		Username:     username,
 		RoleID:       uint(roleID),
-		DataScope:    dataScope,
 		DepartmentID: uint(departmentID),
 		Menus:        menus,
 		Permissions:  permissions,
