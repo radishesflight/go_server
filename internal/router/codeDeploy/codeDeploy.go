@@ -59,5 +59,12 @@ func CodeDeployRoutes(rg *gin.RouterGroup) {
 			pkgs.POST("/:id/pull", codeDeploy.PullPackage)
 			pkgs.DELETE("/:id", codeDeploy.DeletePackage)
 		}
+
+		// 业务项目下的资产(从 JMS 同步)
+		g.GET("/projects/:id/assets", codeDeploy.ListAssetsByProject)
+		g.POST("/assets/sync", codeDeploy.SyncAssets)
+
+		// 一键同步:项目 + 资产 顺序执行(前端 1 个按钮)
+		g.POST("/sync", codeDeploy.SyncAll)
 	}
 }

@@ -14,10 +14,24 @@ package service
 
 import (
 	"errors"
+	"regexp"
 
 	"go_server/internal/model"
 	"go_server/pkg/jumpserver"
 )
+
+// stripJMSCountSuffix 去掉 JMS 节点名末尾 " (数字)" 后缀(表示该节点下有多少资产)
+//
+// 例: "新丝路 (3)" → "新丝路"
+//
+//	   "一心堂 (4)"  → "一心堂"
+//	- 末尾 " (数字)" 紧贴字符串结尾
+//	- 数字可 0+ 位
+var jmsCountSuffix = regexp.MustCompile(`\s*\(\d+\)\s*$`)
+
+func stripJMSCountSuffix(name string) string {
+	return jmsCountSuffix.ReplaceAllString(name, "")
+}
 
 // 业务错误
 var (
@@ -59,6 +73,26 @@ func (s *BusinessProjectService) List() ([]map[string]interface{}, error) {
 		out[i] = formatProject(p)
 	}
 	return out, nil
+}
+
+// GetList 分页查询(给后台管理页用,包含已禁用的)
+func (s *BusinessProjectService) GetList(page, size int) ([]map[string]interface{}, int64, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 10
+	}
+	var projects []model.BusinessProjects
+	var total int64
+	db := model.DB.Model(&model.BusinessProjects{})
+	db.Count(&total)
+	db.Order("sort asc, id asc").Offset((page - 1) * size).Limit(size).Find(&projects)
+	out := make([]map[string]interface{}, len(projects))
+	for i, p := range projects {
+		out[i] = formatProject(p)
+	}
+	return out, total, nil
 }
 
 // Get 单条
@@ -322,7 +356,7 @@ func (s *BusinessProjectService) SyncFromJMS(client *jumpserver.Client) (*SyncRe
 		if code == "" {
 			continue
 		}
-		valid = append(valid, kv{code: code, name: n.Name})
+		valid = append(valid, kv{code: code, name: stripJMSCountSuffix(n.Name)})
 	}
 
 	// 2. 拉当前表所有非软删的(code, id, name)

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -67,13 +68,45 @@ type Client struct {
 	http    *http.Client
 }
 
+// Asset JMS 资产(/api/v1/assets/assets/ 列表项的最小子集)
+//
+// 实际接口返回 30+ 字段,这里只取同步需要的几个;多余字段会被 json.Unmarshal 忽略
+//
+//	nodes[0] 决定"这个资产属于哪个项目",存 jms_id(uuid) 和 name(展示名)
+type Asset struct {
+	ID        string       `json:"id"`        // jms asset uuid
+	Name      string       `json:"name"`      // 资产名(展示)
+	Address   string       `json:"address"`   // IP/域名
+	Platform  *AssetPlat   `json:"platform"`  // 平台(Linux/Windows/...)
+	Nodes     []Node       `json:"nodes"`     // 所属项目树(只取 nodes[0])
+	Protocols []AssetProto `json:"protocols"` // 主要协议(取第一个)
+	Comment   string       `json:"comment"`
+}
+
+type AssetPlat struct {
+	Name string `json:"name"`
+}
+
+type AssetProto struct {
+	Name string `json:"name"`
+	Port int    `json:"port"`
+}
+
+// AssetListResp 分页响应
+type AssetListResp struct {
+	Count    int     `json:"count"`
+	Next     *string `json:"next"`     // 下一页 URL(完整),null 表示到底
+	Previous *string `json:"previous"` // 上一页 URL(完整)
+	Results  []Asset `json:"results"`
+}
+
 // NewClient 构造一个 Client
-//   - baseURL: e.g. "http://118.24.89.187:8081"
+//   - baseURL: e.g. "http://118.24.89.187:8081" (不要带尾斜杠,带会触发 //api/v1/... 404)
 //   - token:   JMS 用户的 Token(从 JMS 个人中心拿)
 //   - orgID:   组织 ID(多组织场景用,UUID 字符串)
 func NewClient(baseURL, token, orgID string) *Client {
 	return &Client{
-		baseURL: baseURL,
+		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
 		orgID:   orgID,
 		http:    &http.Client{Timeout: 30 * time.Second},
@@ -113,4 +146,41 @@ func (c *Client) GetNodeTree() ([]Node, error) {
 		return nil, fmt.Errorf("JMS 响应解析失败: %w (body 前 200 字符: %.200s)", err, string(body))
 	}
 	return nodes, nil
+}
+
+// ListAssets 拉资产列表(分页,单页)
+//
+// 端点:GET {baseURL}/api/v1/assets/assets/?limit=N&offset=M
+// 第一次调 offset=0,然后取 resp.Next URL 继续(里面自带 offset/limit)
+//
+// 返回的 AssetListResp.Next == nil 表示全部拉完
+func (c *Client) ListAssets(url string) (*AssetListResp, error) {
+	if url == "" {
+		// 第一次调用
+		url = c.baseURL + "/api/v1/assets/assets/?limit=100"
+	}
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("构造请求失败: %w", err)
+	}
+	req.Header.Set("Authorization", "Token "+c.token)
+	req.Header.Set("X-JMS-ORG", c.orgID)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("JMS 请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("JMS GET assets -> %d: %s", resp.StatusCode, string(body))
+	}
+
+	var out AssetListResp
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("JMS 响应解析失败: %w (body 前 200 字符: %.200s)", err, string(body))
+	}
+	return &out, nil
 }
