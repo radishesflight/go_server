@@ -98,12 +98,7 @@ func GetCurrentUser(c *gin.Context) {
 	uid, _ := userID.(uint)
 	rid, _ := roleID.(uint)
 
-	user, menus, permissions, err := authSvc.GetCurrentUser(uid, rid)
-	if err != nil {
-		Error(c, CodeUnknown, "获取用户信息失败")
-		return
-	}
-
+	user, menus, permissions := authSvc.GetCurrentUser(uid, rid)
 	Success(c, gin.H{
 		"user":        user,
 		"menus":       menus,

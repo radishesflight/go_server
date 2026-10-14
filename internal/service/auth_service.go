@@ -113,7 +113,10 @@ func (s *AuthService) Login(username, password string) (string, gin.H, []*MenuTr
 }
 
 // GetCurrentUser 取当前用户信息(根据 token 解出的 userID / roleID 重新查 DB)
-func (s *AuthService) GetCurrentUser(userID, roleID uint) (gin.H, []*MenuTreeNode, []string, error) {
+//
+// 当前实现:只读,DB 出错也走"成功 + 空数据"降级(避免刷新接口雪崩)。
+// 错误通过日志记录,不返回给调用方(handler 不需要区分具体错误)。
+func (s *AuthService) GetCurrentUser(userID, roleID uint) (gin.H, []*MenuTreeNode, []string) {
 	var user model.AdminUsers
 	model.DB.Where("id = ?", userID).First(&user)
 
@@ -139,7 +142,7 @@ func (s *AuthService) GetCurrentUser(userID, roleID uint) (gin.H, []*MenuTreeNod
 		"role_id":       user.RoleID,
 		"role":          role.Name,
 		"department_id": user.DepartmentID,
-	}, menuList, permissions, nil
+	}, menuList, permissions
 }
 
 // Logout 删除 Redis 中保存的 token
@@ -156,11 +159,6 @@ func (s *AuthService) getMenuIDsByRole(roleID uint) ([]uint, error) {
 		menuIDs[i] = r.MenuID
 	}
 	return menuIDs, nil
-}
-
-// GetMenuIDsByRole 公开版 - 给中间件懒加载用
-func (s *AuthService) GetMenuIDsByRole(roleID uint) ([]uint, error) {
-	return s.getMenuIDsByRole(roleID)
 }
 
 // getPermissionRoutesByRole 取角色的权限码列表
@@ -192,11 +190,6 @@ func (s *AuthService) getPermissionRoutesByRole(roleID uint) ([]string, error) {
 		}
 	}
 	return permissions, nil
-}
-
-// GetPermissionRoutesByRole 公开版 - 给中间件懒加载用
-func (s *AuthService) GetPermissionRoutesByRole(roleID uint) ([]string, error) {
-	return s.getPermissionRoutesByRole(roleID)
 }
 
 // ReloadUserContext 重新加载角色的 menus + permissions

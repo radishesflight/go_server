@@ -14,13 +14,11 @@
 //	POST   /api/codeDeploy/packages                    上传代码包(multipart)
 //	POST   /api/codeDeploy/packages/:id/pull           触发部署(目前 mock)
 //
-// 权限处理(临时方案,流程通了再加回):
+// 权限:走 PermissionMiddleware。
 //
-//	TODO: 走 PermissionMiddleware 前需要
-//	  1. 改 route_sync.go:前缀白名单加 "/api/codeDeploy/"
-//	  2. admin_menus 表加一条 code='codeDeploy' 菜单(见 migrations/2026_08_13_admin_menu_code_deploy.sql)
-//	  3. 重启后端,SyncRoutes 会自动补 11 条 operation + 给超管授权
-//	现在先只走 AuthMiddleware,登录就能调。
+//	启动时 SyncRoutes 在 admin_menu_operations 里同步这些路由,
+//	并自动给超管角色(role_id=1)关联上;具体见 migrations/2026_08_13_admin_menu_code_deploy.sql
+//	和 internal/service/route_sync.go 的白名单。
 package codeDeploy
 
 import (
@@ -32,15 +30,15 @@ import (
 
 // CodeDeployRoutes 注册代码部署路由
 func CodeDeployRoutes(rg *gin.RouterGroup) {
-	// 全部需登录
+	// 全部需登录 + 鉴权
 	g := rg.Group("/codeDeploy")
-	g.Use(middleware.AuthMiddleware())
+	g.Use(middleware.AuthMiddleware(), middleware.PermissionMiddleware())
 	{
 		// 端字典
 		g.GET("/endpoints", codeDeploy.ListEndpoints)
 
-		// 业务项目(权限中间件先注释,流程通了再加回)
-		projects := g.Group("/projects" /*, middleware.PermissionMiddleware()*/)
+		// 业务项目
+		projects := g.Group("/projects")
 		{
 			projects.GET("/tree", codeDeploy.ListProjectTree)
 			projects.GET("", codeDeploy.ListProjects)
@@ -51,8 +49,8 @@ func CodeDeployRoutes(rg *gin.RouterGroup) {
 			projects.POST("/sync", codeDeploy.SyncProjects) // 从 JumpServer 同步
 		}
 
-		// 代码包(权限中间件先注释,流程通了再加回)
-		pkgs := g.Group("/packages" /*, middleware.PermissionMiddleware()*/)
+		// 代码包
+		pkgs := g.Group("/packages")
 		{
 			pkgs.GET("", codeDeploy.ListPackages)
 			pkgs.GET("/:id", codeDeploy.GetPackage)

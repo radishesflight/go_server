@@ -76,8 +76,20 @@ func (s *RoleMenuService) AssignMenusAndOperations(roleID uint, menuIDs []uint, 
 		return ErrRoleMenuRequireRole
 	}
 
+	// 全部 4 步走一个事务,任一步失败回滚,避免角色权限被部分清空
+	tx := model.DB.Begin()
+	if tx.Error != nil {
+		return ErrRoleMenuAssign
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback()
+		}
+	}()
+
 	// 1. 删 admin_role_menus 旧记录
-	if err := model.DB.Where("role_id = ?", roleID).Delete(&model.AdminRoleMenus{}).Error; err != nil {
+	if err := tx.Where("role_id = ?", roleID).Delete(&model.AdminRoleMenus{}).Error; err != nil {
 		return ErrRoleMenuAssign
 	}
 
@@ -90,13 +102,13 @@ func (s *RoleMenuService) AssignMenusAndOperations(roleID uint, menuIDs []uint, 
 				MenuID: mid,
 			})
 		}
-		if err := model.DB.Create(&relations).Error; err != nil {
+		if err := tx.Create(&relations).Error; err != nil {
 			return ErrRoleMenuAssign
 		}
 	}
 
 	// 3. 删 admin_role_operations 旧记录
-	if err := model.DB.Where("role_id = ?", roleID).Delete(&model.AdminRoleOperations{}).Error; err != nil {
+	if err := tx.Where("role_id = ?", roleID).Delete(&model.AdminRoleOperations{}).Error; err != nil {
 		return ErrRolePermAssign
 	}
 
@@ -115,11 +127,16 @@ func (s *RoleMenuService) AssignMenusAndOperations(roleID uint, menuIDs []uint, 
 			})
 		}
 		if len(roleOps) > 0 {
-			if err := model.DB.Create(&roleOps).Error; err != nil {
+			if err := tx.Create(&roleOps).Error; err != nil {
 				return ErrRolePermAssign
 			}
 		}
 	}
+
+	if err := tx.Commit().Error; err != nil {
+		return ErrRoleMenuAssign
+	}
+	committed = true
 
 	// 5. bump 角色权限版本号 → 所有该角色用户的 token 都会在下一次请求时被懒加载
 	//    不用删 token,不用踢人,改完权限立刻生效

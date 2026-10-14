@@ -71,6 +71,11 @@ func GenerateToken(userID uint, username string, roleID uint, departmentID uint,
 }
 
 // ValidateToken 从 Redis 读 token
+//
+// 错误语义:任一关键字段缺失都视为 token 失效,直接返回 error。
+// user_id 是 token 存在的唯一标记,username/role_id 是后续中间件必需的。
+// menus/permissions 即使损坏也不会让请求通过(PermissionMiddleware 走 "len==0"
+// 或 PermissionMiddleware 在 ReloadUserContext 之后被重置)。
 func ValidateToken(token string) (*TokenData, error) {
 	ctx := context.Background()
 	key := fmt.Sprintf("token:%s", token)
@@ -80,8 +85,14 @@ func ValidateToken(token string) (*TokenData, error) {
 		return nil, err
 	}
 
-	username, _ := model.RDB.HGet(ctx, key, "username").Result()
-	roleID, _ := model.RDB.HGet(ctx, key, "role_id").Uint64()
+	username, err := model.RDB.HGet(ctx, key, "username").Result()
+	if err != nil {
+		return nil, err
+	}
+	roleID, err := model.RDB.HGet(ctx, key, "role_id").Uint64()
+	if err != nil {
+		return nil, err
+	}
 	departmentID, _ := model.RDB.HGet(ctx, key, "department_id").Uint64()
 	menusStr, _ := model.RDB.HGet(ctx, key, "menus").Result()
 	permissionsStr, _ := model.RDB.HGet(ctx, key, "permissions").Result()
@@ -89,8 +100,16 @@ func ValidateToken(token string) (*TokenData, error) {
 
 	var menus []Menu
 	var permissions []string
-	json.Unmarshal([]byte(menusStr), &menus)
-	json.Unmarshal([]byte(permissionsStr), &permissions)
+	if menusStr != "" {
+		if err := json.Unmarshal([]byte(menusStr), &menus); err != nil {
+			return nil, fmt.Errorf("token.menus 解析失败: %w", err)
+		}
+	}
+	if permissionsStr != "" {
+		if err := json.Unmarshal([]byte(permissionsStr), &permissions); err != nil {
+			return nil, fmt.Errorf("token.permissions 解析失败: %w", err)
+		}
+	}
 
 	return &TokenData{
 		UserID:       uint(userID),

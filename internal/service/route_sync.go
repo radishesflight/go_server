@@ -50,7 +50,9 @@ func SyncRoutes(r *gin.Engine, adminRoleID uint) (*SyncRoutesResult, error) {
 	// 2. 过滤出 /api/system/* 下的(只有这些是 PermissionMiddleware 管的)
 	filtered := make([]gin.RouteInfo, 0, len(allRoutes))
 	for _, route := range allRoutes {
-		if strings.HasPrefix(route.Path, "/api/system/") {
+		// 只同步 PermissionMiddleware 管理的两类前缀
+		if strings.HasPrefix(route.Path, "/api/system/") ||
+			strings.HasPrefix(route.Path, "/api/codeDeploy/") {
 			filtered = append(filtered, route)
 		}
 	}
@@ -82,8 +84,11 @@ func SyncRoutes(r *gin.Engine, adminRoleID uint) (*SyncRoutesResult, error) {
 			continue
 		}
 
-		// 4.2 解析 module: /api/system/<code>/...  → code
-		parts := strings.Split(strings.TrimPrefix(path, "/api/system/"), "/")
+		// 4.2 解析 module: /api/<code>/...  → code
+		//     支持 /api/system/<code>/... 和 /api/codeDeploy/<code>/...
+		pathAfterPrefix := strings.TrimPrefix(path, "/api/system/")
+		pathAfterPrefix = strings.TrimPrefix(pathAfterPrefix, "/api/codeDeploy/")
+		parts := strings.Split(pathAfterPrefix, "/")
 		if len(parts) == 0 || parts[0] == "" {
 			res.Skipped++
 			res.SkipList = append(res.SkipList, method+" "+path+" (no module code in path)")
@@ -106,17 +111,19 @@ func SyncRoutes(r *gin.Engine, adminRoleID uint) (*SyncRoutesResult, error) {
 			Sort:   0,
 		}
 		if err := model.DB.Create(&newOp).Error; err != nil {
-			// 唯一索引冲突(并发 sync)→ 忽略
-			if !strings.Contains(err.Error(), "Duplicate") && !strings.Contains(err.Error(), "1062") {
-				logger.L.Error("SyncRoutes insert failed",
-					zap.String("method", method),
-					zap.String("path", path),
-					zap.Error(err),
-				)
-				res.Skipped++
-				res.SkipList = append(res.SkipList, method+" "+path+" (insert err: "+err.Error()+")")
+			// 唯一索引冲突(并发 sync 或重启) → 视为已存在,不计入 inserted
+			if strings.Contains(err.Error(), "Duplicate") || strings.Contains(err.Error(), "1062") {
+				res.Existing++
 				continue
 			}
+			logger.L.Error("SyncRoutes insert failed",
+				zap.String("method", method),
+				zap.String("path", path),
+				zap.Error(err),
+			)
+			res.Skipped++
+			res.SkipList = append(res.SkipList, method+" "+path+" (insert err: "+err.Error()+")")
+			continue
 		}
 
 		res.Inserted++
