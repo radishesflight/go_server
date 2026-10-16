@@ -76,10 +76,23 @@ func SyncRoutes(r *gin.Engine, adminRoleID uint) (*SyncRoutesResult, error) {
 		method := route.Method
 		path := route.Path
 
-		// 4.1 已存在?(按 method+path)
+		// 4.1 已存在?(按 method+path,包括软删行)
+		//     ⚠️ 必须用 Unscoped():GORM 默认软删过滤会忽略 deleted_at IS NOT NULL 的行,
+		//     但 UNIQUE 索引 idx_op_method_path 不看 deleted_at ——
+		//     如果只靠默认 First 看活跃行,会判 "不存在" 然后 INSERT 触发 1062 Duplicate
+		//     看到软删行就复活(deleted_at 置 NULL)而不是新建,跟"重新发现这条路由"语义一致
 		var existing model.AdminMenuOperations
-		err := model.DB.Where("method = ? AND path = ?", method, path).First(&existing).Error
+		err := model.DB.Unscoped().Where("method = ? AND path = ?", method, path).First(&existing).Error
 		if err == nil {
+			if existing.DeletedAt.Valid {
+				// 软删行复活,同步给超管(因为后面第 5 步统一会处理新加的,
+				// 这里只复活记录本身,role 关联见 GetByOperation 是否会顺带检查)
+				if err := model.DB.Unscoped().Model(&existing).Update("deleted_at", nil).Error; err != nil {
+					res.Skipped++
+					res.SkipList = append(res.SkipList, method+" "+path+" (resurrect failed: "+err.Error()+")")
+					continue
+				}
+			}
 			res.Existing++
 			continue
 		}
