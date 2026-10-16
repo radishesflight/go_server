@@ -32,15 +32,15 @@ import (
 
 // 业务错误
 var (
-	ErrPackageNotFound      = errors.New("代码包不存在")
-	ErrPackageExtInvalid    = errors.New("文件扩展名与端不匹配")
-	ErrPackageTooLarge      = errors.New("代码包超过大小限制(200MB)")
-	ErrPackageUpload        = errors.New("代码包上传失败")
-	ErrPackageCreate        = errors.New("代码包入库失败")
-	ErrPackageDelete        = errors.New("代码包删除失败")
-	ErrProjectNoEndpoint    = errors.New("该项目未配置该端")
+	ErrPackageNotFound       = errors.New("代码包不存在")
+	ErrPackageExtInvalid     = errors.New("文件扩展名与端不匹配")
+	ErrPackageTooLarge       = errors.New("代码包超过大小限制(200MB)")
+	ErrPackageUpload         = errors.New("代码包上传失败")
+	ErrPackageCreate         = errors.New("代码包入库失败")
+	ErrPackageDelete         = errors.New("代码包删除失败")
+	ErrProjectNoEndpoint     = errors.New("该项目未配置该端")
 	ErrPackageNoDeployTarget = errors.New("代码包未配置部署目标")
-	ErrPackagePullFail      = errors.New("代码包部署失败")
+	ErrPackagePullFail       = errors.New("代码包部署失败")
 )
 
 // JMS 拉取总超时:5min(100MB 包下载 + 解压足够,JMS 任务调度本身有 ~5s 延迟)
@@ -438,15 +438,17 @@ func (s *CodePackageService) Pull(id uint) (map[string]interface{}, error) {
 //  4. unzip -o 解压到 deployPath/__deploy_tmp_<pid>/
 //  5. 智能平铺:
 //     - 若临时目录第一层只有 1 个 entry 且是目录(如 ceshi/index.html 这种 "single-root"),
-//       cd 进该目录后再平铺 — 这是 web 前端包最常见的结构
+//     cd 进该目录后再平铺 — 这是 web 前端包最常见的结构
 //     - 若临时目录第一层是多个 entry(扁平:index.html, dist/, package.json),
-//       就在临时目录原地平铺
+//     就在临时目录原地平铺
 //     - 临时目录空 → 报"空 zip"错误
 //  6. 把当前目录所有内容 mv 到 deployPath(同名先 rm -rf 再 mv,实现覆盖)
 //  7. 清理临时目录和原 zip
 //
 // 失败时**不**回滚 backup(原目录已经被覆盖,backup 是救命稻草,留着)
-func buildCodePackagePullCmd(deployPath, signedURL, fullName string) string { return buildCodePackagePullCmdImpl(deployPath, signedURL, fullName) }
+func buildCodePackagePullCmd(deployPath, signedURL, fullName string) string {
+	return buildCodePackagePullCmdImpl(deployPath, signedURL, fullName)
+}
 
 func buildCodePackagePullCmdImpl(deployPath, signedURL, fullName string) string {
 	// shell 引用,防特殊字符(/, $, 空格 等)
@@ -512,12 +514,18 @@ func buildCodePackagePullCmdImpl(deployPath, signedURL, fullName string) string 
 
 	// 3. 解压到临时目录
 	sb.WriteString("mkdir -p \"$TMP_DIR\"\n")
-	sb.WriteString(fmt.Sprintf("unzip -o %s -d \"$TMP_DIR\"\n", quotedFile))
-	sb.WriteString("UNZIP_RC=$?\n")
+	// unzip 容忍 warning(压缩方法不支持/特殊文件名等会退出非 0),用 || true 强制 rc=0
+	// 真失败靠"解压出多少个 entry"判断(top_count)
+	sb.WriteString(fmt.Sprintf("(unzip -o %s -d \"$TMP_DIR\" 2>&1; true) | tail -n 50\n", quotedFile))
+	sb.WriteString("UNZIP_RC=${PIPESTATUS[0]}\n")
 	sb.WriteString("if [ $UNZIP_RC -ne 0 ]; then\n")
-	sb.WriteString("  echo \"unzip failed: rc=$UNZIP_RC, zip left at ${CODE_ZIP} for debug\"\n")
-	sb.WriteString("  rm -rf \"$TMP_DIR\"\n")
-	sb.WriteString("  exit $UNZIP_RC\n")
+	sb.WriteString("  echo \"unzip warned: rc=$UNZIP_RC (non-fatal, continuing if files extracted)\"\n")
+	sb.WriteString("fi\n")
+	// 检查实际有没有解压出文件
+	sb.WriteString("top_count_after=$(ls -1A \"$TMP_DIR\" 2>/dev/null | wc -l)\n")
+	sb.WriteString("if [ \"$top_count_after\" -eq 0 ]; then\n")
+	sb.WriteString("  echo \"unzip truly failed: no files extracted (zip may be corrupt)\" 1>&2\n")
+	sb.WriteString("  exit 10\n")
 	sb.WriteString("fi\n")
 	// 解压完删掉 zip(节省空间)
 	sb.WriteString(fmt.Sprintf("rm -f %s\n", quotedFile))

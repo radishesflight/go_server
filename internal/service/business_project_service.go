@@ -276,21 +276,22 @@ func (s *BusinessProjectService) ListWithAssetsAndPaths() ([]map[string]interfac
 		for _, a := range projAssets {
 			ap := pathByAsset[a.ID]
 			pathCount += len(ap)
-			// 路径只展示 name(用户截图要求)
+			// 路径节点:id + name + type(2026-10-16 新增 type,前端 ApkPackage 按 type='web' 过滤)
 			pathNodes := make([]map[string]interface{}, 0, len(ap))
 			for _, p := range ap {
 				pathNodes = append(pathNodes, map[string]interface{}{
 					"id":   p.ID,
 					"name": p.Name,
+					"type": p.Type,
 				})
 			}
 			assetNodes = append(assetNodes, map[string]interface{}{
-				"id":      a.ID,
-				"name":    a.Name,
-				"address": a.Address,
+				"id":       a.ID,
+				"name":     a.Name,
+				"address":  a.Address,
 				"platform": a.Platform,
-				"os":      a.OS,
-				"paths":   pathNodes,
+				"os":       a.OS,
+				"paths":    pathNodes,
 			})
 		}
 		node["path_count"] = pathCount

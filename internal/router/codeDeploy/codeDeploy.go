@@ -72,6 +72,7 @@ func CodeDeployRoutes(rg *gin.RouterGroup) {
 		g.GET("/assets", codeDeploy.ListAssets)
 		g.POST("/assets/sync", codeDeploy.SyncAssets)
 		g.POST("/assets/:id/probe-deps", codeDeploy.ProbeAssetDeps)
+		g.POST("/assets/:id/git-deploy", codeDeploy.GitDeploy) // 后端 API 部署(走 git reset,2026-10-16 新增)
 
 		// 资产路径(每个资产可绑多个 Linux 目录,只描述意图不执行命令)
 		// 注意:/assets/:id/paths 要在 /assets/sync 之前注册,否则 :id=sync 冲突

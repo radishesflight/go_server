@@ -12,6 +12,7 @@ package codeDeploy
 import (
 	"errors"
 	"strconv"
+	"strings"
 
 	"go_server/internal/handler"
 	"go_server/internal/service"
@@ -22,14 +23,16 @@ import (
 var assetPathSvc = service.NewAssetPathService()
 
 // ListAssetPaths 查某资产的所有路径
-// GET /api/codeDeploy/assets/:id/paths
+// GET /api/codeDeploy/assets/:id/paths?type=api
+// type 可选:"api" / "web" / "other",空 = 不过滤(向后兼容)
 func ListAssetPaths(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || id == 0 {
 		handler.Error(c, handler.CodeParamsInvalid, "无效的资产ID")
 		return
 	}
-	list, err := assetPathSvc.ListByAsset(uint(id))
+	pathType := strings.TrimSpace(c.Query("type"))
+	list, err := assetPathSvc.ListByAsset(uint(id), pathType)
 	if err != nil {
 		handler.Error(c, handler.CodeUnknown, "查询资产路径失败")
 		return
