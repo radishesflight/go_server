@@ -49,6 +49,10 @@ const codePackagePullTimeout = 5 * time.Minute
 // 最大 200MB(代码包比图片大很多)
 const maxCodePackageSize = 200 * 1024 * 1024
 
+// 备份保留数:每次部署在 PARENT_DIR 下生成 <dir>_<ts>.zip,只留最近 N 个
+// 老的被删,防止目录被撑爆
+const keepRecentBackups = 5
+
 // CodePackageService 代码包业务
 type CodePackageService struct{}
 
@@ -483,6 +487,19 @@ func buildCodePackagePullCmdImpl(deployPath, signedURL, fullName string) string 
 	sb.WriteString("  exit $ZIP_RC\n")
 	sb.WriteString("fi\n")
 	sb.WriteString("echo \"backup ok: ${BACKUP_ZIP}\"\n")
+
+	// 1.5 清理老的备份 zip,只留最近 5 个(按 mtime 倒序,跳过前 5)
+	//     portable sh 写法:不用 -z 标志(JMS 资产上的 tail 不识别 -z)
+	//     -printf '%T@\t%p\n' 拿 epoch + tab + 路径,sort -rn 倒序,cut -f2- 拿路径,tail -n +6 跳过头 5
+	//     xargs -r 删(默认按空白 split,文件名含 tab 才不安全,实际不会)
+	//     BACKUP_ZIP 是刚生成的,mtime 最新,一定会被保留
+	sb.WriteString(fmt.Sprintf("KEEP_COUNT=%d\n", keepRecentBackups))
+	sb.WriteString("find \"$PARENT_DIR\" -maxdepth 1 -type f -name \"${DIR_NAME}_*.zip\" -printf '%T@\\t%p\\n' 2>/dev/null \\\n")
+	sb.WriteString("  | sort -rn \\\n")
+	sb.WriteString("  | cut -f2- \\\n")
+	sb.WriteString("  | tail -n +$((KEEP_COUNT + 1)) \\\n")
+	sb.WriteString("  | xargs -r rm -f --\n")
+	sb.WriteString("echo \"backup retention: kept recent ${KEEP_COUNT} of ${DIR_NAME}_*.zip\"\n")
 
 	// 2. curl 下载代码包到目标目录
 	sb.WriteString("cd \"$DEPLOY_DIR\"\n")
