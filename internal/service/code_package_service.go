@@ -49,6 +49,41 @@ const codePackagePullTimeout = 5 * time.Minute
 // 最大 200MB(代码包比图片大很多)
 const maxCodePackageSize = 200 * 1024 * 1024
 
+// 安装包最大 500MB(2026-10-16):APK 通常 50-150MB,iOS IPA 可达 200-400MB
+const maxInstallPackageSize = 500 * 1024 * 1024
+
+// allowedExtForPathType 返回该路径类型允许的文件扩展名白名单
+//
+//	空切片表示不限制(向后兼容:assetPathID=0 或 pathType 未知)
+//	web → [.zip]             前端 web 包
+//	apk → [.apk]             Android 安装包
+//	ios → [.ipa, .plist]     iOS 安装包 + OTA 清单
+//	api → 不允许上传代码包(走 git reset),前端不该走到
+//	other → 不限制(预留)
+func allowedExtForPathType(pathType string) []string {
+	switch pathType {
+	case "web":
+		return []string{".zip"}
+	case "apk":
+		return []string{".apk"}
+	case "ios":
+		return []string{".ipa", ".plist"}
+	default:
+		return nil
+	}
+}
+
+// maxSizeForPathType 返回该路径类型的最大文件大小
+//
+//	apk / ios → 500MB(安装包)
+//	其他(含 web / 空) → 200MB(原限制)
+func maxSizeForPathType(pathType string) int64 {
+	if pathType == "apk" || pathType == "ios" {
+		return maxInstallPackageSize
+	}
+	return maxCodePackageSize
+}
+
 // 备份保留数:每次部署在 PARENT_DIR 下生成 <dir>_<ts>.zip,只留最近 N 个
 // 老的被删,防止目录被撑爆
 const keepRecentBackups = 5
@@ -131,6 +166,10 @@ func (s *CodePackageService) Get(id uint) (map[string]interface{}, error) {
 //   - 3 个外键全部入库:project_id / asset_id / asset_path_id
 //   - 不再写 code_package_deploy_targets(已废弃,功能并入本表)
 //
+// 2026-10-16 扩展(APK/iOS 安装包):
+//   - 按 asset_path.type 白名单扩展名:web → .zip;apk → .apk;ios → .ipa/.plist
+//   - apk / ios 大小限制放宽到 500MB(原 200MB)
+//
 // 返回:序列化后的 map(含 id, full_name, file_url, project_id, asset_id, asset_path_id)
 func (s *CodePackageService) Upload(
 	name, fileName string, size int64,
@@ -152,7 +191,8 @@ func (s *CodePackageService) Upload(
 	if asset.Status != 1 {
 		return nil, ErrPackageNotFound
 	}
-	// 校验路径(如果传了)存在并归属该资产
+	// 校验路径(如果传了)存在并归属该资产;同时拿到 type 用于后续白名单/大小判断
+	var pathType string
 	if assetPathID > 0 {
 		var p model.BusinessAssetPaths
 		if err := model.DB.First(&p, assetPathID).Error; err != nil {
@@ -161,9 +201,27 @@ func (s *CodePackageService) Upload(
 		if p.AssetID != assetID {
 			return nil, ErrPackageNotFound
 		}
+		pathType = p.Type
 	}
-	// 校验大小
-	if size > maxCodePackageSize {
+	// 扩展名校验(2026-10-16):按路径类型白名单
+	//   web → .zip;  apk → .apk;  ios → .ipa/.plist
+	ext := strings.ToLower(path.Ext(fileName))
+	if assetPathID > 0 {
+		if allow := allowedExtForPathType(pathType); len(allow) > 0 {
+			ok := false
+			for _, e := range allow {
+				if ext == e {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				return nil, ErrPackageExtInvalid
+			}
+		}
+	}
+	// 大小校验(2026-10-16):apk/ios 放宽到 500MB
+	if size > maxSizeForPathType(pathType) {
 		return nil, ErrPackageTooLarge
 	}
 
@@ -173,8 +231,7 @@ func (s *CodePackageService) Upload(
 		return nil, err
 	}
 
-	// 扩展名(从文件名拿)
-	ext := strings.ToLower(path.Ext(fileName))
+	// 扩展名兜底默认值(2026-10-16):ext 已在白名单校验时拿到,这里只补空值
 	if ext == "" {
 		ext = ".zip"
 	}
