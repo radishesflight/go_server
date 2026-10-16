@@ -24,13 +24,18 @@ type BusinessAssetPaths struct {
 	CreatedAt time.Time `gorm:"type:datetime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"type:datetime" json:"updated_at"`
 	AssetID   uint      `gorm:"index;not null" json:"asset_id"`
-	Name      string    `gorm:"size:100;not null" json:"name"`  // 路径名称(给前端展示用):"前端web目录"
-	Path      string    `gorm:"size:500;not null" json:"path"`  // 实际路径:"/home/www/web"
-	// 路径类型(2026-10-16 新增):"api" / "web" / "other"
+	Name      string    `gorm:"size:100;not null" json:"name"` // 路径名称(给前端展示用):"前端web目录"
+	Path      string    `gorm:"size:500;not null" json:"path"` // 实际路径:"/home/www/web"
+	// 路径类型(2026-10-16 新增):"api" / "web" / "other" / "apk" / "ios"
 	//   default 'web' — 新建不指定时按 web,统一前端 web 部署主线
-	//   老的 NULL 数据不补,前端严格 type==='web' 过滤自动隐藏
-	Type      string    `gorm:"size:16;index;default:'web'" json:"type"`
-	Sort      int       `gorm:"default:0" json:"sort"`
+	//   "api"   — 后端 API 代码,走 git reset 部署(Online.vue)
+	//   "web"   — 前端 web 包,走 OSS 包上传 + 智能平铺(ApkPackage.vue)
+	//   "apk"   — Android 安装包,仅管理不上传(ApkManagement.vue)
+	//   "ios"   — iOS 安装包,仅管理不上传(ApkManagement.vue)
+	//   "other" — 其它/预留
+	//   老的 NULL 数据不补,前端严格 === 过滤自动隐藏
+	Type string `gorm:"size:16;index;default:'web'" json:"type"`
+	Sort int    `gorm:"default:0" json:"sort"`
 }
 
 func (BusinessAssetPaths) TableName() string {

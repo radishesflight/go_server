@@ -6,6 +6,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 
 	"go_server/internal/model"
 )
@@ -25,8 +26,9 @@ func NewAssetPathService() *AssetPathService { return &AssetPathService{} }
 
 // ListByAsset 查某资产下的所有路径(按 sort asc, id asc)
 //
-//	pathType 过滤:"" 不过滤;"api" 只返 type='api'; "web" 只返 type='web'; "other" 同理
-//	(2026-10-16 新增:为 Online.vue "后端API部署" 菜单只展示 type=api 的路径,ApkPackage 走另一接口不受影响)
+//	pathType 过滤:"" 不过滤;"api" 只返 type='api'; "web" 只返 type='web'; "other"/"apk"/"ios" 同理
+//	(2026-10-16 新增:为 Online.vue "后端API部署" 菜单只展示 type=api 的路径,
+//	 2026-10-16 扩展 apk/ios:为 APK包管理 菜单展示 type IN ('apk','ios') 的路径)
 func (s *AssetPathService) ListByAsset(assetID uint, pathType string) ([]map[string]interface{}, error) {
 	if assetID == 0 {
 		return nil, ErrAssetPathNotFound
@@ -62,18 +64,19 @@ func formatAssetPath(p model.BusinessAssetPaths) map[string]interface{} {
 
 // AddPath 给资产加一条路径(2026-10-16 加 type 参数,v2 string + DB default)
 //
-//	type 接收 string(前端 el-select value):"api" / "web" / "other"
+//	type 接收 string(前端 el-select value):"api" / "web" / "other" / "apk" / "ios"
 //	空 / 不传 → 不赋 p.Type,让 DB DEFAULT 'web' 兜底(GORM 不写零值字段,触发 default)
-//	非法值(非 api/web/other)→ 归 "other"
+//	非法值(非 api/web/other/apk/ios)→ 归 "other"
+//
+//	path 必填规则(2026-10-16 扩展):
+//	  - type IN ("api", "web") → path 必填(这两个类型真部署到服务器路径)
+//	  - type IN ("apk", "ios", "other") → path 可留空(只挂代码包不部署)
 func (s *AssetPathService) AddPath(assetID uint, name, path, pathType string, sort int) (map[string]interface{}, error) {
 	if assetID == 0 {
 		return nil, ErrAssetPathNotFound
 	}
 	if name == "" {
 		return nil, ErrAssetPathNameEmpty
-	}
-	if path == "" {
-		return nil, ErrAssetPathPathEmpty
 	}
 	// 资产必须存在且软删 status=1
 	var asset model.BusinessAssets
@@ -86,12 +89,21 @@ func (s *AssetPathService) AddPath(assetID uint, name, path, pathType string, so
 		Path:    path,
 		Sort:    sort,
 	}
-	// type 显式传:校验,非法值归 other
+	// type 显式传:校验白名单,非法值归 other
 	if pathType != "" {
-		if pathType != "api" && pathType != "web" && pathType != "other" {
+		switch pathType {
+		case "api", "web", "other", "apk", "ios":
+			// ok
+		default:
 			pathType = "other"
 		}
 		p.Type = pathType
+	}
+	// path 必填校验:api/web 真部署必须填;apk/ios/other 可空
+	if p.Type == "api" || p.Type == "web" {
+		if strings.TrimSpace(p.Path) == "" {
+			return nil, ErrAssetPathPathEmpty
+		}
 	}
 	// pathType == "" 时 p.Type 保持空字符串,GORM Insert 会跳过,DB DEFAULT 'web' 触发
 	if err := model.DB.Create(&p).Error; err != nil {
