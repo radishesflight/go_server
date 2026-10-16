@@ -43,6 +43,13 @@ func SetupRouter(mode string) *gin.Engine {
 
 	r := gin.Default()
 
+	// 明确设置可信代理:只信任本机回环(127.0.0.1 + ::1)
+	//   - dev 模式:前端 vite proxy 在本机,X-Forwarded-For 来自 127.0.0.1,可信
+	//   - prod 模式:如果后面挂 nginx 反代,需要把 nginx 所在 IP 加进这个列表
+	//   - nil(默认)会打印 "trusted all proxies" 警告,且 c.ClientIP() 接受任意 XFF
+	//     头,生产环境会被伪造。这里显式收紧到本机,避免误用。
+	r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
+
 	// 全局中间件
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
