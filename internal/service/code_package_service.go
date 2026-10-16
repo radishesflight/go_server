@@ -523,6 +523,8 @@ func buildCodePackagePullCmdImpl(deployPath, signedURL, fullName string) string 
 	sb.WriteString(fmt.Sprintf("rm -f %s\n", quotedFile))
 
 	// 4. 智能平铺:探测第一层结构
+	//    用 rsync(替代 find rm + find mv)实现"逐文件替换,deployDir 始终存在"
+	//    关键:Nginx 持续 serve deployDir,不会看到"目录空"的窗口
 	sb.WriteString("cd \"$TMP_DIR\"\n")
 	sb.WriteString("top_count=$(ls -1A | wc -l)\n")
 	sb.WriteString("if [ \"$top_count\" -eq 0 ]; then\n")
@@ -538,20 +540,29 @@ func buildCodePackagePullCmdImpl(deployPath, signedURL, fullName string) string 
 	sb.WriteString("    cd \"$only_entry\"\n")
 	sb.WriteString("  fi\n")
 	sb.WriteString("fi\n")
+	// 记下 staging 目录绝对路径(可能是 TMP_DIR 或 TMP_DIR/<single_root>)
+	sb.WriteString("STAGING_ABS=$(pwd)\n")
+	sb.WriteString("cd \"$PARENT_DIR\"\n")
 
-	// 5. 平铺到 deployPath
-	//    find -printf '%f\0' + while read -d '' 处理含空格/换行的文件名
-	sb.WriteString("find . -mindepth 1 -maxdepth 1 -printf '%f\\0' | while IFS= read -r -d '' f; do\n")
-	sb.WriteString("  target=\"${DEPLOY_DIR}/${f}\"\n")
-	sb.WriteString("  if [ -e \"$target\" ] || [ -L \"$target\" ]; then\n")
-	sb.WriteString("    rm -rf \"$target\"\n")
-	sb.WriteString("  fi\n")
-	sb.WriteString("  mv \"$f\" \"$target\" 2>/dev/null || true\n")
-	sb.WriteString("done\n")
+	// 5. 用 rsync 把 staging 内容同步到 DEPLOY_DIR
+	//    -a archive 模式(保留权限/时间/递归/links)
+	//    --delete 删 staging 没有的目标文件(实现"新包没的旧文件被删")
+	//    源路径以 / 结尾:复制 staging/ 目录**内容**到 DEPLOY_DIR,而不是创建 staging/ 子目录
+	//    rsync 逐文件处理:新文件先 cp(覆盖式),旧文件最后 unlink,deployDir 始终存在
+	//    Nginx 读到的内容是"新旧混合"状态,但**任何时刻目录都不空**,无 404 窗口
+	sb.WriteString("rsync -a --delete \"${STAGING_ABS}/\" \"$DEPLOY_DIR/\"\n")
+	sb.WriteString("RSYNC_RC=$?\n")
+	sb.WriteString("if [ $RSYNC_RC -ne 0 ]; then\n")
+	sb.WriteString("  echo \"rsync failed: rc=$RSYNC_RC, restore from backup\"\n")
+	sb.WriteString("  cd \"$DEPLOY_DIR\"\n")
+	sb.WriteString("  rm -rf \"$TMP_DIR\"\n")
+	sb.WriteString("  exit $RSYNC_RC\n")
+	sb.WriteString("fi\n")
+	sb.WriteString("echo \"rsync done: deployDir updated in-place (no empty window)\"\n")
 
-	// 6. 清理
-	sb.WriteString("cd \"$DEPLOY_DIR\"\n")
+	// 6. 清理:删 staging 临时目录和 code_zip
 	sb.WriteString("rm -rf \"$TMP_DIR\"\n")
+	sb.WriteString("rm -f \"$CODE_ZIP\"\n")
 
 	sb.WriteString("echo \"deploy ok: backup=${BACKUP_ZIP}\"\n")
 	sb.WriteString("exit 0\n")
