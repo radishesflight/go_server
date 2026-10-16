@@ -15,8 +15,10 @@ package codeDeploy
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"go_server/config"
 	"go_server/internal/handler"
@@ -79,6 +81,7 @@ func ProbeAssetDeps(c *gin.Context) {
 // SyncAssets 从 JMS 同步业务资产(全量,事务)
 // POST /api/codeDeploy/assets/sync
 func SyncAssets(c *gin.Context) {
+	start := time.Now()
 	cfg := config.AppConfig.Jumpserver
 	if strings.TrimSpace(cfg.BaseURL) == "" || strings.TrimSpace(cfg.Token) == "" {
 		handler.Error(c, handler.CodeProjectSyncNoConfig, "JumpServer 未配置")
@@ -88,6 +91,13 @@ func SyncAssets(c *gin.Context) {
 	client := jumpserver.NewClient(cfg.BaseURL, cfg.Token, cfg.OrgID)
 	res, err := assetSvc.SyncFromJMS(client)
 	if err != nil {
+		service.LogOperation(c, service.LogOperationParams{
+			Event: service.EventAssetSync, Result: service.ResultFail,
+			Method: c.Request.Method, Path: c.FullPath(),
+			TargetType: service.TargetAsset, TargetName: "JMS 业务资产",
+			DurationMS: time.Since(start).Milliseconds(),
+			ErrorMsg: err.Error(),
+		})
 		if errors.Is(err, service.ErrAssetSyncFail) {
 			handler.Error(c, handler.CodeProjectSyncFail, "同步资产失败: "+err.Error())
 			return
@@ -95,6 +105,17 @@ func SyncAssets(c *gin.Context) {
 		handler.Error(c, handler.CodeProjectSyncFail, "同步失败: "+err.Error())
 		return
 	}
+	tn := "JMS 业务资产"
+	if res != nil {
+		tn = fmt.Sprintf("JMS 业务资产 +%d ~%d -%d (JMS %d / 本地 %d)",
+			res.Added, res.Updated, res.Removed, res.TotalJMS, res.TotalLocal)
+	}
+	service.LogOperation(c, service.LogOperationParams{
+		Event: service.EventAssetSync, Result: service.ResultSuccess,
+		Method: c.Request.Method, Path: c.FullPath(),
+		TargetType: service.TargetAsset, TargetName: tn,
+		DurationMS: time.Since(start).Milliseconds(),
+	})
 	handler.Success(c, res)
 }
 
@@ -103,6 +124,7 @@ func SyncAssets(c *gin.Context) {
 // POST /api/codeDeploy/sync
 // 流程:项目 → 资产(顺序依赖);任一失败整体 fail
 func SyncAll(c *gin.Context) {
+	start := time.Now()
 	cfg := config.AppConfig.Jumpserver
 	if strings.TrimSpace(cfg.BaseURL) == "" || strings.TrimSpace(cfg.Token) == "" {
 		handler.Error(c, handler.CodeProjectSyncNoConfig, "JumpServer 未配置")
@@ -133,8 +155,36 @@ func SyncAll(c *gin.Context) {
 		res.AssetErr = assetErr.Error()
 	}
 	if projectErr != nil && assetErr != nil {
+		service.LogOperation(c, service.LogOperationParams{
+			Event: service.EventSyncAll, Result: service.ResultFail,
+			Method: c.Request.Method, Path: c.FullPath(),
+			TargetType: service.TargetProject, TargetName: "JMS 项目+资产",
+			DurationMS: time.Since(start).Milliseconds(),
+			ErrorMsg: "项目+资产同步都失败: " + projectErr.Error() + " / " + assetErr.Error(),
+		})
 		handler.Error(c, handler.CodeProjectSyncFail, "项目+资产同步都失败")
 		return
 	}
+	// 至少一个成功,写一条混合 log
+	result := service.ResultSuccess
+	errMsg := ""
+	if projectErr != nil {
+		result = service.ResultFail
+		errMsg = "项目同步失败: " + projectErr.Error()
+	} else if assetErr != nil {
+		result = service.ResultFail
+		errMsg = "资产同步失败: " + assetErr.Error()
+	}
+	tn := "JMS 项目+资产"
+	if projectRes != nil && assetRes != nil {
+		tn = fmt.Sprintf("JMS 项目+资产 项目:+%d ~%d 资产:+%d ~%d", projectRes.Added, projectRes.Updated, assetRes.Added, assetRes.Updated)
+	}
+	service.LogOperation(c, service.LogOperationParams{
+		Event: service.EventSyncAll, Result: result,
+		Method: c.Request.Method, Path: c.FullPath(),
+		TargetType: service.TargetProject, TargetName: tn,
+		DurationMS: time.Since(start).Milliseconds(),
+		ErrorMsg: errMsg,
+	})
 	handler.Success(c, res)
 }

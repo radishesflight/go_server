@@ -58,6 +58,7 @@ func main() {
 			&model.BusinessAssets{},
 			&model.BusinessAssetPaths{},
 			&model.CodePackages{},
+			&model.OperationLog{},
 		}
 		for _, m := range models {
 			if err := model.DB.AutoMigrate(m); err != nil {

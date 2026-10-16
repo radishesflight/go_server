@@ -14,10 +14,13 @@
 package codeDeploy
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
 	"go_server/config"
 	"go_server/internal/handler"
+	"go_server/internal/service"
 	"go_server/pkg/jumpserver"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +29,7 @@ import (
 // SyncProjects 从 JumpServer 同步业务项目
 // POST /api/codeDeploy/projects/sync
 func SyncProjects(c *gin.Context) {
+	start := time.Now()
 	cfg := config.AppConfig.Jumpserver
 	if strings.TrimSpace(cfg.BaseURL) == "" || strings.TrimSpace(cfg.Token) == "" {
 		handler.Error(c, handler.CodeProjectSyncNoConfig, "JumpServer 未配置(base_url / token 缺失),请在 config.yaml 配 jumpserver 段")
@@ -35,6 +39,13 @@ func SyncProjects(c *gin.Context) {
 	client := jumpserver.NewClient(cfg.BaseURL, cfg.Token, cfg.OrgID)
 	res, err := projectSvc.SyncFromJMS(client)
 	if err != nil {
+		service.LogOperation(c, service.LogOperationParams{
+			Event: service.EventProjectSync, Result: service.ResultFail,
+			Method: c.Request.Method, Path: c.FullPath(),
+			TargetType: service.TargetProject, TargetName: "JMS 业务项目",
+			DurationMS: time.Since(start).Milliseconds(),
+			ErrorMsg: err.Error(),
+		})
 		// 简单分类:响应里带 "解析失败" 走 CodeProjectSyncParse,其他走 Fail
 		if strings.Contains(err.Error(), "解析失败") {
 			handler.Error(c, handler.CodeProjectSyncParse, "JMS 响应解析失败: "+err.Error())
@@ -43,5 +54,17 @@ func SyncProjects(c *gin.Context) {
 		handler.Error(c, handler.CodeProjectSyncFail, "同步失败: "+err.Error())
 		return
 	}
+	// 成功:targetName 拼成 "+N -N" 形式便于复盘
+	tn := "JMS 业务项目"
+	if res != nil {
+		tn = fmt.Sprintf("JMS 业务项目 +%d ~%d -%d (JMS %d / 本地 %d)",
+			res.Added, res.Updated, res.Removed, res.TotalJMS, res.TotalLocal)
+	}
+	service.LogOperation(c, service.LogOperationParams{
+		Event: service.EventProjectSync, Result: service.ResultSuccess,
+		Method: c.Request.Method, Path: c.FullPath(),
+		TargetType: service.TargetProject, TargetName: tn,
+		DurationMS: time.Since(start).Milliseconds(),
+	})
 	handler.Success(c, res)
 }

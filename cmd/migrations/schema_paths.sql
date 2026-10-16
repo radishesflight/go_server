@@ -1,0 +1,1 @@
+DESCRIBE go_business_asset_paths;

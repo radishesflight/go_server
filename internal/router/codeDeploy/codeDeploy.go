@@ -81,5 +81,9 @@ func CodeDeployRoutes(rg *gin.RouterGroup) {
 
 		// 一键同步:项目 + 资产 顺序执行(前端 1 个按钮)
 		g.POST("/sync", codeDeploy.SyncAll)
+
+		// 操作日志(部署日志菜单用,2026-10-16 新增)
+		g.GET("/operation-logs", codeDeploy.ListOperationLogs)
+		g.GET("/operation-logs/:id", codeDeploy.GetOperationLog)
 	}
 }

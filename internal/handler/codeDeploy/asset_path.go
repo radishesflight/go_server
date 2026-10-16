@@ -37,10 +37,11 @@ func ListAssetPaths(c *gin.Context) {
 	handler.Success(c, gin.H{"list": list})
 }
 
-// AddPathReq 新增路径请求体
+// AddPathReq 新增路径请求体(2026-10-16 加 type 字段:api / web / other)
 type AddPathReq struct {
 	Name string `json:"name" binding:"required"`
 	Path string `json:"path" binding:"required"`
+	Type string `json:"type"` // "api" / "web" / "other"(默认 other),区分前端/后端/其他
 	Sort int    `json:"sort"`
 }
 
@@ -57,7 +58,7 @@ func AddAssetPath(c *gin.Context) {
 		handler.Error(c, handler.CodeParamsInvalid, "参数错误: "+err.Error())
 		return
 	}
-	p, err := assetPathSvc.AddPath(uint(id), req.Name, req.Path, req.Sort)
+	p, err := assetPathSvc.AddPath(uint(id), req.Name, req.Path, req.Type, req.Sort)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrAssetPathNameEmpty):

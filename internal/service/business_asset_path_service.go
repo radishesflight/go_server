@@ -46,14 +46,18 @@ func formatAssetPath(p model.BusinessAssetPaths) map[string]interface{} {
 		"asset_id":   p.AssetID,
 		"name":       p.Name,
 		"path":       p.Path,
+		"type":       p.Type,
 		"sort":       p.Sort,
 		"created_at": model.FormatTime(p.CreatedAt),
 		"updated_at": model.FormatTime(p.UpdatedAt),
 	}
 }
 
-// AddPath 给资产加一条路径
-func (s *AssetPathService) AddPath(assetID uint, name, path string, sort int) (map[string]interface{}, error) {
+// AddPath 给资产加一条路径(2026-10-16 加 type 参数,v2 string + DB default)
+//   type 接收 string(前端 el-select value):"api" / "web" / "other"
+//   空 / 不传 → 不赋 p.Type,让 DB DEFAULT 'web' 兜底(GORM 不写零值字段,触发 default)
+//   非法值(非 api/web/other)→ 归 "other"
+func (s *AssetPathService) AddPath(assetID uint, name, path, pathType string, sort int) (map[string]interface{}, error) {
 	if assetID == 0 {
 		return nil, ErrAssetPathNotFound
 	}
@@ -74,6 +78,14 @@ func (s *AssetPathService) AddPath(assetID uint, name, path string, sort int) (m
 		Path:    path,
 		Sort:    sort,
 	}
+	// type 显式传:校验,非法值归 other
+	if pathType != "" {
+		if pathType != "api" && pathType != "web" && pathType != "other" {
+			pathType = "other"
+		}
+		p.Type = pathType
+	}
+	// pathType == "" 时 p.Type 保持空字符串,GORM Insert 会跳过,DB DEFAULT 'web' 触发
 	if err := model.DB.Create(&p).Error; err != nil {
 		return nil, err
 	}
