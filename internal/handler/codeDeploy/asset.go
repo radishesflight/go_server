@@ -2,9 +2,10 @@
 //
 // 接口列表:
 //
-//	GET  /api/codeDeploy/projects/:id/assets   某项目下的所有资产
-//	GET  /api/codeDeploy/assets                全部启用的资产(代码拉取控制台选资产用)
-//	POST /api/codeDeploy/assets/sync           同步(从 JMS 拉,事务 upsert)
+//	GET  /api/codeDeploy/projects/:id/assets       某项目下的所有资产
+//	GET  /api/codeDeploy/assets                    全部启用的资产(代码拉取控制台选资产用)
+//	POST /api/codeDeploy/assets/sync               同步(从 JMS 拉,事务 upsert)
+//	POST /api/codeDeploy/assets/:id/probe-deps     探测部署依赖(zip/unzip/curl)
 //
 // 业务码翻译:
 //
@@ -52,6 +53,27 @@ func ListAssets(c *gin.Context) {
 		return
 	}
 	handler.Success(c, gin.H{"list": list})
+}
+
+// ProbeAssetDeps 探测指定资产上部署相关命令是否齐全(zip/unzip/curl)
+// POST /api/codeDeploy/assets/:id/probe-deps
+// 2026-10-16 新增:部署前检查目标机,提前发现缺哪个工具
+func ProbeAssetDeps(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		handler.Error(c, handler.CodeParamsInvalid, "无效的资产ID")
+		return
+	}
+	res, err := assetSvc.ProbeAssetDeps(uint(id))
+	if err != nil {
+		if errors.Is(err, service.ErrAssetNotFound) {
+			handler.Error(c, handler.CodeProjectNotFound, "资产不存在")
+		} else {
+			handler.Error(c, handler.CodeUnknown, "探测失败: "+err.Error())
+		}
+		return
+	}
+	handler.Success(c, res)
 }
 
 // SyncAssets 从 JMS 同步业务资产(全量,事务)

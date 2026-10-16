@@ -544,21 +544,31 @@ func buildCodePackagePullCmdImpl(deployPath, signedURL, fullName string) string 
 	sb.WriteString("STAGING_ABS=$(pwd)\n")
 	sb.WriteString("cd \"$PARENT_DIR\"\n")
 
-	// 5. 用 rsync 把 staging 内容同步到 DEPLOY_DIR
-	//    -a archive 模式(保留权限/时间/递归/links)
-	//    --delete 删 staging 没有的目标文件(实现"新包没的旧文件被删")
-	//    源路径以 / 结尾:复制 staging/ 目录**内容**到 DEPLOY_DIR,而不是创建 staging/ 子目录
-	//    rsync 逐文件处理:新文件先 cp(覆盖式),旧文件最后 unlink,deployDir 始终存在
-	//    Nginx 读到的内容是"新旧混合"状态,但**任何时刻目录都不空**,无 404 窗口
-	sb.WriteString("rsync -a --delete \"${STAGING_ABS}/\" \"$DEPLOY_DIR/\"\n")
-	sb.WriteString("RSYNC_RC=$?\n")
-	sb.WriteString("if [ $RSYNC_RC -ne 0 ]; then\n")
-	sb.WriteString("  echo \"rsync failed: rc=$RSYNC_RC, restore from backup\"\n")
+	// 5. 用 cp + 找差异删,替代 rsync 避免 "file has vanished" 误报
+	//    rsync 在 source 端(虽然不在 nginx serve 路径下)有时会报 vanished 警告(exit 24),
+	//    实际数据已传完,但我们脚本会把它当失败。cp 更直接,无 vanish 风险。
+	//    流程:
+	//      1) cp -a staging/* deployDir/  (新文件覆盖式复制,deployDir 始终存在)
+	//      2) 找 deployDir 顶层有但 staging 没有的,删掉(实现"新包没的旧文件被删")
+	//    整个过程 deployDir 始终可读,Nginx 无空档。
+	sb.WriteString("cd \"$STAGING_ABS\"\n")
+	sb.WriteString("cp -a . \"$DEPLOY_DIR/\" 2>/dev/null\n")
+	sb.WriteString("CP_RC=$?\n")
+	sb.WriteString("if [ $CP_RC -ne 0 ]; then\n")
+	sb.WriteString("  echo \"cp failed: rc=$CP_RC, restore from backup\"\n")
 	sb.WriteString("  cd \"$DEPLOY_DIR\"\n")
 	sb.WriteString("  rm -rf \"$TMP_DIR\"\n")
-	sb.WriteString("  exit $RSYNC_RC\n")
+	sb.WriteString("  exit $CP_RC\n")
 	sb.WriteString("fi\n")
-	sb.WriteString("echo \"rsync done: deployDir updated in-place (no empty window)\"\n")
+	sb.WriteString("cd \"$DEPLOY_DIR\"\n")
+	sb.WriteString("# 删 deployDir 顶层有但 staging 没有的(新包没的旧文件)\n")
+	sb.WriteString("for f in $(ls -1A); do\n")
+	sb.WriteString("  case \"$f\" in __deploy_tmp_*) continue;; esac\n")
+	sb.WriteString("  if [ ! -e \"$STAGING_ABS/$f\" ]; then\n")
+	sb.WriteString("    rm -rf \"$f\"\n")
+	sb.WriteString("  fi\n")
+	sb.WriteString("done\n")
+	sb.WriteString("echo \"cp+sync done: deployDir updated in-place (no empty window)\"\n")
 
 	// 6. 清理:删 staging 临时目录和 code_zip
 	sb.WriteString("rm -rf \"$TMP_DIR\"\n")
