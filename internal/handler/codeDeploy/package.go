@@ -32,11 +32,13 @@ import (
 var packageSvc = service.NewCodePackageService()
 
 // ListPackages 列表
-// GET /api/codeDeploy/packages?project_id=&endpoint_id=
+// GET /api/codeDeploy/packages?project_id=&asset_id=&asset_path_id=
+// 2026-10-16 改造:加 asset_id / asset_path_id 过滤,删 endpoint_id
 func ListPackages(c *gin.Context) {
 	projectID, _ := strconv.ParseUint(c.Query("project_id"), 10, 64)
-	endpointID, _ := strconv.ParseUint(c.Query("endpoint_id"), 10, 64)
-	list, err := packageSvc.List(uint(projectID), uint(endpointID))
+	assetID, _ := strconv.ParseUint(c.Query("asset_id"), 10, 64)
+	assetPathID, _ := strconv.ParseUint(c.Query("asset_path_id"), 10, 64)
+	list, err := packageSvc.List(uint(projectID), uint(assetID), uint(assetPathID))
 	if err != nil {
 		handler.Error(c, handler.CodeUnknown, "查询代码包失败")
 		return

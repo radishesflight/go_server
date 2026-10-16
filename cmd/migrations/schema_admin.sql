@@ -1,0 +1,3 @@
+DESCRIBE go_admin_role_operations;
+DESCRIBE go_admin_menu_operations;
+DESCRIBE go_admin_role_menus;

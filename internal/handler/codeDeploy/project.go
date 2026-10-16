@@ -154,3 +154,15 @@ func DeleteProject(c *gin.Context) {
 	}
 	handler.Success(c, nil)
 }
+
+// ListProjectsWithAssetsAndPaths 项目 + 资产 + 路径 三层嵌套
+// GET /api/codeDeploy/projects-with-paths
+// 2026-10-16 新增:给"apk/前端包管理"页左侧项目树用
+func ListProjectsWithAssetsAndPaths(c *gin.Context) {
+	list, err := projectSvc.ListWithAssetsAndPaths()
+	if err != nil {
+		handler.Error(c, handler.CodeUnknown, "查询项目树失败")
+		return
+	}
+	handler.Success(c, gin.H{"list": list})
+}

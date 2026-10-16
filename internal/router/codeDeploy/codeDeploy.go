@@ -49,6 +49,11 @@ func CodeDeployRoutes(rg *gin.RouterGroup) {
 			projects.POST("/sync", codeDeploy.SyncProjects) // 从 JumpServer 同步
 		}
 
+		// 业务项目 + 资产 + 路径 三层嵌套(给"apk/前端包管理"页左侧用)
+		// 注意:必须注册在 /projects/:id 之后? 不,这是独立路径,但要在 /projects/:id/...
+		// 子组之外(避免被当成 :id 解析)
+		g.GET("/projects-with-paths", codeDeploy.ListProjectsWithAssetsAndPaths)
+
 		// 代码包
 		pkgs := g.Group("/packages")
 		{

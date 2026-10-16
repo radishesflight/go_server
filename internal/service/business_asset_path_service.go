@@ -80,10 +80,10 @@ func (s *AssetPathService) AddPath(assetID uint, name, path string, sort int) (m
 	return formatAssetPath(p), nil
 }
 
-// DeletePath 删一条路径(软删)
+// DeletePath 删一条路径(真删,业务表约定不软删)
 func (s *AssetPathService) DeletePath(id uint) error {
 	if id == 0 {
 		return ErrAssetPathNotFound
 	}
-	return model.DB.Delete(&model.BusinessAssetPaths{}, id).Error
+	return model.DB.Unscoped().Delete(&model.BusinessAssetPaths{}, id).Error
 }

@@ -205,6 +205,101 @@ func (s *BusinessProjectService) Delete(id uint) error {
 	return tx.Commit().Error
 }
 
+// ListWithAssetsAndPaths 返回项目 + 资产 + 路径 三层嵌套(给"apk/前端包管理"页左侧树用)
+//
+// 结构:
+//
+//	[{
+//	  id, code, name, ..., path_count,            // 项目的"端数量"= 路径总条数
+//	  assets: [{
+//	    id, name, address, ..., paths: [{id, name}] // 资产下的路径(只展示 name)
+//	  }]
+//	}]
+//
+// 一次性查 project + asset + path 三个表,然后内存组装,避免 N+1
+//
+// 注意:business_asset_paths 是真删(2026-10-16 起),所以 list 不用过滤 deleted_at
+func (s *BusinessProjectService) ListWithAssetsAndPaths() ([]map[string]interface{}, error) {
+	// 1. 查所有启用的项目
+	var projects []model.BusinessProjects
+	if err := model.DB.Where("status = ?", 1).Order("sort asc, id asc").Find(&projects).Error; err != nil {
+		return nil, err
+	}
+	if len(projects) == 0 {
+		return []map[string]interface{}{}, nil
+	}
+
+	projectIDs := make([]uint, len(projects))
+	for i, p := range projects {
+		projectIDs[i] = p.ID
+	}
+
+	// 2. 查所有启用的资产(用 project_id IN 一次拿完)
+	var assets []model.BusinessAssets
+	if err := model.DB.Where("project_id IN ? AND status = ?", projectIDs, 1).
+		Order("id asc").Find(&assets).Error; err != nil {
+		return nil, err
+	}
+
+	// 3. 查所有路径(用 asset_id IN 一次拿完,business_asset_paths 真删,无 deleted_at 过滤)
+	var paths []model.BusinessAssetPaths
+	if len(assets) > 0 {
+		assetIDs := make([]uint, len(assets))
+		for i, a := range assets {
+			assetIDs[i] = a.ID
+		}
+		if err := model.DB.Where("asset_id IN ?", assetIDs).
+			Order("sort asc, id asc").Find(&paths).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	// 4. 内存组装:pathByAsset
+	pathByAsset := make(map[uint][]model.BusinessAssetPaths, len(assets))
+	for _, p := range paths {
+		pathByAsset[p.AssetID] = append(pathByAsset[p.AssetID], p)
+	}
+	// 5. assetByProject
+	assetByProject := make(map[uint][]model.BusinessAssets, len(projects))
+	for _, a := range assets {
+		assetByProject[a.ProjectID] = append(assetByProject[a.ProjectID], a)
+	}
+
+	// 6. 输出
+	out := make([]map[string]interface{}, len(projects))
+	for i, p := range projects {
+		node := formatProject(p)
+		projAssets := assetByProject[p.ID]
+		// 统计该项目的"端数量"= 所有资产下路径总条数
+		pathCount := 0
+		assetNodes := make([]map[string]interface{}, 0, len(projAssets))
+		for _, a := range projAssets {
+			ap := pathByAsset[a.ID]
+			pathCount += len(ap)
+			// 路径只展示 name(用户截图要求)
+			pathNodes := make([]map[string]interface{}, 0, len(ap))
+			for _, p := range ap {
+				pathNodes = append(pathNodes, map[string]interface{}{
+					"id":   p.ID,
+					"name": p.Name,
+				})
+			}
+			assetNodes = append(assetNodes, map[string]interface{}{
+				"id":      a.ID,
+				"name":    a.Name,
+				"address": a.Address,
+				"platform": a.Platform,
+				"os":      a.OS,
+				"paths":   pathNodes,
+			})
+		}
+		node["path_count"] = pathCount
+		node["assets"] = assetNodes
+		out[i] = node
+	}
+	return out, nil
+}
+
 // ListTree 返回整棵业务项目树
 // 结构:[{id, code, name, description, sort, status, endpoints: [{id, code, name, ext, icon, sort}]}]
 func (s *BusinessProjectService) ListTree() ([]map[string]interface{}, error) {

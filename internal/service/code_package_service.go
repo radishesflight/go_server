@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 
 	"go_server/config"
 	"go_server/internal/model"
@@ -76,15 +75,22 @@ func formatPackage(p model.CodePackages) map[string]interface{} {
 	}
 }
 
-// List 按 (project_id, endpoint_id) 查代码包列表
-// 都为 0 表示不过滤
-func (s *CodePackageService) List(projectID, endpointID uint) ([]map[string]interface{}, error) {
+// List 按 (project_id, asset_id, asset_path_id) 查代码包列表
+// 任何参数 = 0 表示不过滤
+//
+// 2026-10-16 改造:
+//   - 不再支持 endpoint_id(已废弃,字典表不在截图页面用)
+//   - 加 asset_id / asset_path_id 过滤,给"apk/前端包管理"页用
+func (s *CodePackageService) List(projectID, assetID, assetPathID uint) ([]map[string]interface{}, error) {
 	db := model.DB.Model(&model.CodePackages{}).Where("status = ?", 1)
 	if projectID > 0 {
 		db = db.Where("project_id = ?", projectID)
 	}
-	if endpointID > 0 {
-		db = db.Where("endpoint_id = ?", endpointID)
+	if assetID > 0 {
+		db = db.Where("asset_id = ?", assetID)
+	}
+	if assetPathID > 0 {
+		db = db.Where("asset_path_id = ?", assetPathID)
 	}
 	var pkgs []model.CodePackages
 	if err := db.Order("build_time desc, id desc").Find(&pkgs).Error; err != nil {
@@ -115,9 +121,13 @@ func (s *CodePackageService) Get(id uint) (map[string]interface{}, error) {
 //	fileName, size, open:跟 upload_service 一致的回调
 //	note:可空,uploaderID 从 token 取
 //	build_time / uploader 由服务端自动生成(当前时间 + token.user_id)
-//	assetID / assetPathID:必填,包部署目标(写到 code_package_deploy_targets)
+//	assetID / assetPathID:必填,project_id 由 service 内部从 asset 反查
 //
-// 返回:序列化后的 map(含 id, full_name, file_url, deploy_targets 等)
+// 2026-10-16 改造:
+//   - 3 个外键全部入库:project_id / asset_id / asset_path_id
+//   - 不再写 code_package_deploy_targets(已废弃,功能并入本表)
+//
+// 返回:序列化后的 map(含 id, full_name, file_url, project_id, asset_id, asset_path_id)
 func (s *CodePackageService) Upload(
 	name, fileName string, size int64,
 	open func() (io.ReadCloser, error),
@@ -130,7 +140,7 @@ func (s *CodePackageService) Upload(
 	if assetID == 0 {
 		return nil, ErrPackageNotFound
 	}
-	// 校验资产存在且启用
+	// 校验资产存在且启用,同时拿到它的 project_id
 	var asset model.BusinessAssets
 	if err := model.DB.First(&asset, assetID).Error; err != nil {
 		return nil, ErrPackageNotFound
@@ -165,48 +175,37 @@ func (s *CodePackageService) Upload(
 		ext = ".zip"
 	}
 
-	// version 不再用 nextVersion(那个依赖 project/endpoint),改用时间戳避免重复
+	// version 用时间戳避免重复
 	version := fmt.Sprintf("v%d", time.Now().Unix())
 	fullName := fmt.Sprintf("%s-%s%s", name, version, ext)
 
-	// 入库 + 写 deploy_targets(同一事务,任一失败回滚)
+	// 入库(单条 Insert,3 个外键全填)
 	pkg := model.CodePackages{
-		Name:       name,
-		Version:    version,
-		FullName:   fullName,
-		Ext:        ext,
-		Size:       size,
-		FileURL:    fileURL,
-		FilePath:   objectKey,
-		UploaderID: uploaderID,
-		BuildTime:  time.Now().Format("2006-01-02 15:04:05"),
-		Note:       note,
-		Status:     1,
+		ProjectID:   asset.ProjectID,
+		AssetID:     assetID,
+		AssetPathID: assetPathID,
+		Name:        name,
+		Version:     version,
+		FullName:    fullName,
+		Ext:         ext,
+		Size:        size,
+		FileURL:     fileURL,
+		FilePath:    objectKey,
+		UploaderID:  uploaderID,
+		BuildTime:   time.Now().Format("2006-01-02 15:04:05"),
+		Note:        note,
+		Status:      1,
 	}
-	err = model.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&pkg).Error; err != nil {
-			return ErrPackageCreate
-		}
-		target := model.CodePackageDeployTargets{
-			PackageID:   pkg.ID,
-			AssetID:     assetID,
-			AssetPathID: assetPathID, // 0 表示不指定 cwd
-			Status:      1,
-		}
-		if err := tx.Create(&target).Error; err != nil {
-			return ErrPackageCreate
-		}
-		return nil
-	})
-	if err != nil {
+	if err := model.DB.Create(&pkg).Error; err != nil {
 		// 事务回滚了,但对象存储已推成功,异步清理兜底
 		logger.L.Warn("code_package create failed, object left in storage",
 			zap.String("object_key", objectKey),
 			zap.Error(err),
 		)
-		return nil, err
+		return nil, ErrPackageCreate
 	}
 	out := formatPackage(pkg)
+	out["project_id"] = asset.ProjectID
 	out["asset_id"] = assetID
 	out["asset_path_id"] = assetPathID
 	return out, nil
@@ -283,8 +282,10 @@ func (s *CodePackageService) GetDownloadURL(id uint) (string, error) {
 
 // Pull 触发部署(真实逻辑)
 //
+// 2026-10-16 改造:直接从 code_packages 拿 asset_id / asset_path_id,不再查 deploy_targets
+//
 // 流程:
-//  1. 拿 package + deploy_target → 拿到 asset_id / asset_path_id
+//  1. 拿 package(asset_id / asset_path_id 都在主表)
 //  2. 拿 business_assets(jms_id、address) + business_asset_paths(部署目录)
 //  3. 生成对象存储签名下载 URL(1h 有效,curl 可直接下)
 //  4. 拼 shell 命令:备份现有内容 → curl 下载 → unzip 解压 → 清理 zip
@@ -292,7 +293,7 @@ func (s *CodePackageService) GetDownloadURL(id uint) (string, error) {
 //  6. 一次性返回完整结果给前端
 //
 // 失败语义:
-//   - 任何一步配置缺失(没 deploy_target / 资产禁用 / 路径不属于资产)→ 直接返回业务错
+//   - 任何一步配置缺失(没 asset_id / 资产禁用 / jms_id 空 / 路径不属于资产)→ 直接返回业务错
 //   - JMS 任务执行失败(exit_code != 0 / status=failed)→ 返回 (result, ErrPackagePullFail)
 //     此时 res 仍带 material(stdout),handler 用 ErrorWithData 透传给前端
 func (s *CodePackageService) Pull(id uint) (map[string]interface{}, error) {
@@ -305,16 +306,13 @@ func (s *CodePackageService) Pull(id uint) (map[string]interface{}, error) {
 	if err := model.DB.First(&pkg, id).Error; err != nil {
 		return nil, ErrPackageNotFound
 	}
-
-	// 2. 拿 deploy_target(一个包一条;后续支持多目标时改成循环)
-	var target model.CodePackageDeployTargets
-	if err := model.DB.Where("package_id = ? AND status = 1", id).First(&target).Error; err != nil {
+	if pkg.AssetID == 0 {
 		return nil, ErrPackageNoDeployTarget
 	}
 
-	// 3. 拿资产
+	// 2. 拿资产
 	var asset model.BusinessAssets
-	if err := model.DB.First(&asset, target.AssetID).Error; err != nil {
+	if err := model.DB.First(&asset, pkg.AssetID).Error; err != nil {
 		return nil, ErrPackageNotFound
 	}
 	if asset.Status != 1 {
@@ -324,11 +322,11 @@ func (s *CodePackageService) Pull(id uint) (map[string]interface{}, error) {
 		return nil, ErrPackageNoDeployTarget
 	}
 
-	// 4. 拿路径(可空:asset_path_id=0 时不切目录,在默认 cwd 跑)
+	// 3. 拿路径(可空:asset_path_id=0 时不切目录,在默认 cwd 跑)
 	var deployPath string
-	if target.AssetPathID > 0 {
+	if pkg.AssetPathID > 0 {
 		var p model.BusinessAssetPaths
-		if err := model.DB.First(&p, target.AssetPathID).Error; err != nil {
+		if err := model.DB.First(&p, pkg.AssetPathID).Error; err != nil {
 			return nil, ErrPackageNotFound
 		}
 		if p.AssetID != asset.ID {

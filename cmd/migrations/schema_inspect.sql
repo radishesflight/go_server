@@ -1,0 +1,18 @@
+SELECT '--- business_projects (列结构) ---' AS '';
+DESCRIBE go_business_projects;
+SELECT '--- business_assets (列结构) ---' AS '';
+DESCRIBE go_business_assets;
+SELECT '--- business_asset_paths (列结构) ---' AS '';
+DESCRIBE go_business_asset_paths;
+SELECT '--- code_packages (列结构) ---' AS '';
+DESCRIBE go_code_packages;
+SELECT '--- code_endpoints (字典) ---' AS '';
+SELECT id, code, name, ext FROM go_code_endpoints WHERE status = 1 ORDER BY sort;
+SELECT '--- 厚德项目是否存在? ---' AS '';
+SELECT id, name, code FROM go_business_projects WHERE name LIKE '%厚德%';
+SELECT '--- business_projects 总数 ---' AS '';
+SELECT COUNT(*) AS total FROM go_business_projects WHERE status = 1;
+SELECT '--- business_assets 总数 ---' AS '';
+SELECT COUNT(*) AS total FROM go_business_assets WHERE status = 1;
+SELECT '--- business_asset_paths 总数 ---' AS '';
+SELECT COUNT(*) AS total FROM go_business_asset_paths;
