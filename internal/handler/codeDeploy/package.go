@@ -68,19 +68,19 @@ func GetPackage(c *gin.Context) {
 // POST /api/codeDeploy/packages
 // multipart/form-data fields:
 //   - file           必填,apk/zip/tar.gz
-//   - project_id     必填
-//   - endpoint_id    必填
+//   - asset_id       必填,目标资产 business_assets.id
+//   - asset_path_id  可选,目标路径 business_asset_paths.id(不填=不指定 cwd)
 //   - name           必填,前端填的原始名(不含版本号/扩展名)
 //   - note           可选
 //
 // 服务端自动生成:build_time = 当前时间,uploader_id = token.user_id
 func UploadPackage(c *gin.Context) {
-	projectID, _ := strconv.ParseUint(c.PostForm("project_id"), 10, 64)
-	endpointID, _ := strconv.ParseUint(c.PostForm("endpoint_id"), 10, 64)
+	assetID, _ := strconv.ParseUint(c.PostForm("asset_id"), 10, 64)
+	assetPathID, _ := strconv.ParseUint(c.PostForm("asset_path_id"), 10, 64)
 	name := c.PostForm("name")
 	note := c.PostForm("note")
-	if projectID == 0 || endpointID == 0 {
-		handler.Error(c, handler.CodeParamsInvalid, "请选择所属项目和端")
+	if assetID == 0 {
+		handler.Error(c, handler.CodeParamsInvalid, "请选择目标资产")
 		return
 	}
 	if name == "" {
@@ -103,10 +103,10 @@ func UploadPackage(c *gin.Context) {
 	}
 
 	pkg, err := packageSvc.Upload(
-		uint(projectID), uint(endpointID),
 		name, file.Filename, file.Size,
 		func() (io.ReadCloser, error) { return file.Open() },
 		note, uploaderID,
+		uint(assetID), uint(assetPathID),
 	)
 	if err != nil {
 		translateUploadErr(c, err)
@@ -147,6 +147,8 @@ func translateUploadErr(c *gin.Context, err error) {
 
 // PullPackage 触发部署
 // POST /api/codeDeploy/packages/:id/pull
+// 真实逻辑:查 deploy_targets → 拿资产(jms_id) + 路径 → 生成 OSS 签名下载 URL →
+//          拼 cd+curl+unzip 命令 → 调 JMS ad-hoc 任务 → 后端内部轮询到终态 → 一次性返回 stdout
 func PullPackage(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || id == 0 {
@@ -155,9 +157,15 @@ func PullPackage(c *gin.Context) {
 	}
 	res, err := packageSvc.Pull(uint(id))
 	if err != nil {
-		if errors.Is(err, service.ErrPackageNotFound) {
+		switch {
+		case errors.Is(err, service.ErrPackageNotFound):
 			handler.Error(c, handler.CodePackageNotFound, "代码包不存在")
-		} else {
+		case errors.Is(err, service.ErrPackageNoDeployTarget):
+			handler.Error(c, handler.CodePackageNoDeployTarget, "代码包未配置部署目标")
+		case errors.Is(err, service.ErrPackagePullFail):
+			// 部署失败时 res 仍带 stdout 等详情,塞到 data 给前端展示
+			handler.ErrorWithData(c, handler.CodePackagePullFail, err.Error(), res)
+		default:
 			handler.Error(c, handler.CodeUnknown, "部署失败")
 		}
 		return

@@ -10,9 +10,10 @@
 //  3. config.example.yaml(示例,进库)
 //
 // env 命名规则:yaml 字段全大写 + 下划线
-//   server.port            → SERVER_PORT
-//   database.password      → DATABASE_PASSWORD
-//   aliyun.oss.access_key_id → ALIYUN_OSS_ACCESS_KEY_ID
+//
+//	server.port            → SERVER_PORT
+//	database.password      → DATABASE_PASSWORD
+//	storage.access_key     → STORAGE_ACCESS_KEY
 //
 // 加新字段的步骤:
 //  1. 在对应 XxxConfig struct 加字段
@@ -38,7 +39,7 @@ type Config struct {
 	Database   DatabaseConfig   `yaml:"database"`
 	Redis      RedisConfig      `yaml:"redis"`
 	CORS       CORSConfig       `yaml:"cors"`
-	Aliyun     AliyunConfig     `yaml:"aliyun"`
+	Storage    StorageConfig    `yaml:"storage"`
 	Jumpserver JumpserverConfig `yaml:"jumpserver"`
 }
 
@@ -74,18 +75,33 @@ type CORSConfig struct {
 	AllowedOrigins string `yaml:"allowed_origins"`
 }
 
-// AliyunConfig 阿里云
-type AliyunConfig struct {
-	OSS OSSConfig `yaml:"oss"`
-}
-
-// OSSConfig OSS 配置
-type OSSConfig struct {
-	Endpoint        string `yaml:"endpoint"`
-	AccessKeyID     string `yaml:"access_key_id"`
-	AccessKeySecret string `yaml:"access_key_secret"`
-	BucketName      string `yaml:"bucket_name"`
-	BucketDomain    string `yaml:"bucket_domain"`
+// StorageConfig 对象存储(S3 兼容协议)
+//
+// 支持的 provider:
+//   - aliyun   阿里云 OSS(使用 S3 兼容 endpoint,推荐)
+//   - tencent  腾讯云 COS(使用 S3 兼容 endpoint,推荐)
+//   - minio    自建 MinIO / 其他 S3 兼容服务
+//
+// 阿里云 OSS S3 endpoint 形如:oss-cn-chengdu.aliyuncs.com
+//
+//	使用 path-style=false,Region 必填
+//
+// 腾讯云 COS S3 endpoint 形如:cos.ap-guangzhou.myqcloud.com
+//
+//	使用 path-style=false,Region 必填
+//
+// 业务侧调用方:pkg/storage.Uploader.Upload() / Delete() / PresignGet()
+type StorageConfig struct {
+	Provider   string `yaml:"provider"`    // aliyun / tencent / minio
+	Endpoint   string `yaml:"endpoint"`    // S3 endpoint(不带 https://)
+	Region     string `yaml:"region"`      // 地域(签名用,空则用 endpoint 第一段)
+	AccessKey  string `yaml:"access_key"`  // 访问密钥
+	SecretKey  string `yaml:"secret_key"`  // 私密密钥
+	Bucket     string `yaml:"bucket"`      // bucket 名
+	UseSSL     bool   `yaml:"use_ssl"`     // 是否 https(默认 true)
+	PathStyle  bool   `yaml:"path_style"`  // true=path-style, false=virtual-host(默认)
+	BucketHost string `yaml:"bucket_host"` // 自定义域名/cdn(可空,空则拼 endpoint)
+	Prefix     string `yaml:"prefix"`      // 路径前缀(可空,如 "prod/")
 }
 
 // JumpserverConfig JumpServer Core API 配置
@@ -181,21 +197,36 @@ func applyEnvOverrides(c *Config) {
 		c.CORS.AllowedOrigins = v
 	}
 
-	// aliyun oss
-	if v := os.Getenv("ALIYUN_OSS_ENDPOINT"); v != "" {
-		c.Aliyun.OSS.Endpoint = v
+	// storage (S3 兼容对象存储)
+	if v := os.Getenv("STORAGE_PROVIDER"); v != "" {
+		c.Storage.Provider = v
 	}
-	if v := os.Getenv("ALIYUN_OSS_ACCESS_KEY_ID"); v != "" {
-		c.Aliyun.OSS.AccessKeyID = v
+	if v := os.Getenv("STORAGE_ENDPOINT"); v != "" {
+		c.Storage.Endpoint = v
 	}
-	if v := os.Getenv("ALIYUN_OSS_ACCESS_KEY_SECRET"); v != "" {
-		c.Aliyun.OSS.AccessKeySecret = v
+	if v := os.Getenv("STORAGE_REGION"); v != "" {
+		c.Storage.Region = v
 	}
-	if v := os.Getenv("ALIYUN_OSS_BUCKET_NAME"); v != "" {
-		c.Aliyun.OSS.BucketName = v
+	if v := os.Getenv("STORAGE_ACCESS_KEY"); v != "" {
+		c.Storage.AccessKey = v
 	}
-	if v := os.Getenv("ALIYUN_OSS_BUCKET_DOMAIN"); v != "" {
-		c.Aliyun.OSS.BucketDomain = v
+	if v := os.Getenv("STORAGE_SECRET_KEY"); v != "" {
+		c.Storage.SecretKey = v
+	}
+	if v := os.Getenv("STORAGE_BUCKET"); v != "" {
+		c.Storage.Bucket = v
+	}
+	if v := os.Getenv("STORAGE_BUCKET_HOST"); v != "" {
+		c.Storage.BucketHost = v
+	}
+	if v := os.Getenv("STORAGE_PREFIX"); v != "" {
+		c.Storage.Prefix = v
+	}
+	if v := os.Getenv("STORAGE_USE_SSL"); v != "" {
+		c.Storage.UseSSL = v == "true" || v == "1"
+	}
+	if v := os.Getenv("STORAGE_PATH_STYLE"); v != "" {
+		c.Storage.PathStyle = v == "true" || v == "1"
 	}
 
 	// jumpserver

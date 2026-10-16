@@ -26,6 +26,9 @@ coverage.txt
 /go.work
 /go.work.sum
 
+# Go module 缓存(下载依赖时残留的 .lock / .tmp,已在 GOMODCACHE 里)
+pkg/mod/
+
 # ---------- IDE / 编辑器 ----------
 # IntelliJ / GoLand / JetBrains 系列
 .idea/

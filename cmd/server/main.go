@@ -21,6 +21,7 @@ import (
 	"go_server/internal/router"
 	"go_server/internal/service"
 	"go_server/pkg/logger"
+	"go_server/pkg/storage"
 )
 
 func main() {
@@ -57,6 +58,7 @@ func main() {
 			&model.BusinessAssets{},
 			&model.BusinessAssetPaths{},
 			&model.CodePackages{},
+			&model.CodePackageDeployTargets{},
 		}
 		for _, m := range models {
 			if err := model.DB.AutoMigrate(m); err != nil {
@@ -70,6 +72,22 @@ func main() {
 		logger.L.Error("Redis 连接失败", zap.Error(err))
 	} else {
 		logger.L.Info("Redis 连接成功")
+	}
+
+	// 4.5 初始化对象存储(S3 兼容,支持阿里云 OSS / 腾讯云 COS / MinIO)
+	//     失败不退出,业务上传时会再 ErrNotConfig(给前端更明确的提示)
+	//     这里探测一次,启动期发现配错可立即报错
+	if uploader, err := storage.New(config.AppConfig.Storage); err != nil {
+		logger.L.Warn("对象存储初始化失败(上传/下载会失败)",
+			zap.String("provider", config.AppConfig.Storage.Provider),
+			zap.String("endpoint", config.AppConfig.Storage.Endpoint),
+			zap.String("bucket", config.AppConfig.Storage.Bucket),
+			zap.Error(err))
+	} else {
+		service.SetUploader(uploader)
+		logger.L.Info("对象存储初始化成功",
+			zap.String("provider", config.AppConfig.Storage.Provider),
+			zap.String("bucket", config.AppConfig.Storage.Bucket))
 	}
 
 	// 5. 注册所有路由(中间件 + handler)

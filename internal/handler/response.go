@@ -1,11 +1,12 @@
 // Package handler 提供 HTTP 业务响应工具
 //
 // 所有业务接口的响应格式:
-//  {
-//    "code": 0,                  // 业务码(0=成功,非0=具体错误,见 bizcode.go)
-//    "msg": "success",            // 给用户看的错误文案
-//    "data": { ... }              // 成功时的业务数据
-//  }
+//
+//	{
+//	  "code": 0,                  // 业务码(0=成功,非0=具体错误,见 bizcode.go)
+//	  "msg": "success",            // 给用户看的错误文案
+//	  "data": { ... }              // 成功时的业务数据
+//	}
 //
 // HTTP 状态码**恒为 200**,真实状态在 body.code 里。
 // 这是国内后台项目的标准做法(避免浏览器拦截 4xx、网关改写状态码)。
@@ -37,10 +38,21 @@ func Success(c *gin.Context, data interface{}) {
 // Error 错误响应
 // HTTP 200 + {code: <业务码>, msg: <错误文案>}
 // code 必须是 handler.CodeXxx 业务码(见 bizcode.go)
-// msg 是给用户看的提示文案
+// msg 是给用户看的错误文案
 func Error(c *gin.Context, code int, msg string) {
 	c.JSON(http.StatusOK, Response{
 		Code: code,
 		Msg:  msg,
+	})
+}
+
+// ErrorWithData 错误响应(带 data)
+// 用于"业务失败但有诊断信息"的场景,例如部署命令在远端执行失败时,
+// data 里塞 material(stdout) + summary,前端可以原样展示给用户排错
+func ErrorWithData(c *gin.Context, code int, msg string, data interface{}) {
+	c.JSON(http.StatusOK, Response{
+		Code: code,
+		Msg:  msg,
+		Data: data,
 	})
 }
