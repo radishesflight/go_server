@@ -82,10 +82,16 @@ func NewClient(accessKey, secretKey, defaultRegion, endpointSuffix string) *Clie
 
 // Image ECS 自定义镜像(DescribeImages.Image 的最小子集)
 // 实际返回 30+ 字段,只取列表展示需要的几个
+//
+// 重要(2026-10-17):之前我加了 IsSelfShared bool,但阿里云 API 实际返回 string 类型
+//
+//	"true"/"false"(首字母可能大写),Go json.Unmarshaler 对 bool 字段收到字符串就报错;
+//	即使不报错,本字段其实不参与分类 — 分类只需 ImageOwnerAlias 一个字段,
+//	"self"=我的镜像,"others"=别人共享/社区镜像。所以这里**删掉**这个字段。
 type Image struct {
 	ImageID         string `json:"ImageId"`
 	ImageName       string `json:"ImageName"`
-	ImageType       string `json:"ImageType"`       // System / Self / Others / Marketplace / Serverless
+	ImageType       string `json:"ImageType"`       // 阿里云 API 实际不会返回这个字段,保留占位以防万一
 	ImageOwnerAlias string `json:"ImageOwnerAlias"` // system / self / others / marketplace / image_encryption
 	RegionID        string `json:"RegionId"`
 	OSName          string `json:"OSName"`       // e.g. "CentOS  8.5 64位"
@@ -159,13 +165,19 @@ type DescribeImageSharePermissionResp struct {
 	Message string `json:"Message"`
 }
 
-// describeImages 列镜像
+// describeImages 列镜像(底层 API 调用)
 //   - region: 必填(阿里云要求);空时用 defaultRegion
-//   - imageType: 过滤镜像类型,空=全部;"Self"=自定义
+//   - imageOwnerAlias: 关键过滤参数(system/self/others/marketplace,空=全部),
+//     分类依据见官方文档 https://api.aliyun.com/document/Ecs/2014-05-26/DescribeImages
 //   - status:   过滤状态,空=全部;"Available"=可用
 //   - pageSize: 1-100,默认 50
 //   - pageNumber: 默认 1
-func (c *Client) describeImages(region, imageType, status string, pageSize, pageNumber int) (*DescribeImagesResp, error) {
+//
+// 历史踩坑(2026-10-17):这里原来叫 "imageType" 并传 "Self" / "Others",
+//
+//	但阿里云 DescribeImages **没有 ImageType 这个请求参数**(文档只列 ImageOwnerAlias)。
+//	把参数名改正,语义才准确。
+func (c *Client) describeImages(region, imageOwnerAlias, status string, pageSize, pageNumber int) (*DescribeImagesResp, error) {
 	if region == "" {
 		region = c.defaultRegion
 	}
@@ -180,8 +192,8 @@ func (c *Client) describeImages(region, imageType, status string, pageSize, page
 	}
 	params := url.Values{}
 	params.Set("RegionId", region)
-	if imageType != "" {
-		params.Set("ImageType", imageType)
+	if imageOwnerAlias != "" {
+		params.Set("ImageOwnerAlias", imageOwnerAlias)
 	}
 	if status != "" {
 		params.Set("Status", status)
@@ -220,19 +232,18 @@ func (c *Client) describeImages(region, imageType, status string, pageSize, page
 // 这两层的目的是把"用户私有创建"的镜像过滤出来,排除阿里云预置的 11k+ 公共系统镜像。
 // 用户自定义镜像名一般不含这些前缀。
 func (c *Client) DescribeImages(region string, pageSize, pageNumber int) ([]Image, int, error) {
-	r, err := c.describeImages(region, "Self", "Available", pageSize, pageNumber)
+	// 用 ImageOwnerAlias=self 直接拉"用户私有+主动共享给他人的"那批,跳过 system/marketplace 等
+	// 留下来的就是用户自己的镜像,无论是否分享出去(ImageOwnerAlias=self 都属于"自定义")
+	r, err := c.describeImages(region, "self", "Available", pageSize, pageNumber)
 	if err != nil {
 		return nil, 0, err
 	}
 	filtered := make([]Image, 0, len(r.Images.Image))
 	for _, img := range r.Images.Image {
-		// Layer 1: 显式 system/others/marketplace 跳过
-		switch img.ImageOwnerAlias {
-		case "system", "others", "marketplace", "image_encryption":
-			continue
-		}
-		// Layer 2: 阿里云系统镜像命名约定(_alibase_ 几乎所有官方镜像都有)
 		name := strings.ToLower(img.ImageName)
+		// 阿里云系统镜像命名约定(_alibase_ 几乎所有官方镜像都有)
+		// (DescribeImages 传了 ImageOwnerAlias=self 之后,正常不会出现 system 镜像,
+		//  但历史数据 / 边缘 case 仍可能混进来,这里 Layer 2 兜底)
 		if strings.Contains(name, "_alibase_") ||
 			strings.HasPrefix(name, "win") ||
 			strings.HasPrefix(name, "anolisos") {
@@ -297,10 +308,10 @@ func (c *Client) DescribeImagesAllRegions() ([]Image, error) {
 	return all, nil
 }
 
-// fetchAllImagesInRegion 拉单个 region 的所有**真正自定义**镜像(自动翻页)
+// fetchAllImagesInRegion 拉单个 region 的所有**用户私有(self)**镜像(自动翻页)
 //
-// 过滤规则跟 DescribeImages 一致:跳过 system/others/marketplace/image_encryption,
-// 保留 self 和 ImageOwnerAlias 为空的(老镜像或某些 API 不返回字段的情况)
+// 走 ImageOwnerAlias=self,后台 API 直接过滤,本地不再过滤
+// (DescribeImages 已经把 system 等跳了)
 func (c *Client) fetchAllImagesInRegion(region string) ([]Image, error) {
 	const pageSize = 100
 	all := make([]Image, 0, 50)
@@ -361,23 +372,20 @@ func (c *Client) ListSharedImages() ([]Image, error) {
 	return all, nil
 }
 
-// fetchAllSharedImagesInRegion 拉单个 region 的所有共享镜像(ImageType=Others)
+// fetchAllSharedImagesInRegion 拉单个 region 的所有"别人共享/社区"镜像(ImageOwnerAlias=others,自动翻页)
 //
-//	但阿里云 API 即使传 Others 也会把 system 公共镜像混进来,必须本地再过滤一次
+// 走 ImageOwnerAlias=others 参数让阿里云 API 端直接返回"别人共享给我 + 公开社区镜像"。
+// (API 层面已经按 OwnerAlias=others 过滤,不再混 system 等;本地只兜底命名约定)
 func (c *Client) fetchAllSharedImagesInRegion(region string) []Image {
 	const pageSize = 100
 	all := make([]Image, 0, 32)
 	for page := 1; ; page++ {
-		r, err := c.describeImages(region, "Others", "Available", pageSize, page)
+		r, err := c.describeImages(region, "others", "Available", pageSize, page)
 		if err != nil {
 			return all
 		}
-		// 跟 DescribeImages 一致的过滤逻辑
 		for _, img := range r.Images.Image {
-			switch img.ImageOwnerAlias {
-			case "system", "others", "marketplace", "image_encryption":
-				continue
-			}
+			// 兜底过滤系统镜像命名约定(理论上 ImageOwnerAlias=others 不会进来)
 			name := strings.ToLower(img.ImageName)
 			if strings.Contains(name, "_alibase_") ||
 				strings.HasPrefix(name, "win") ||
@@ -397,9 +405,15 @@ func (c *Client) fetchAllSharedImagesInRegion(region string) []Image {
 //
 // 业务:用户希望一个统一列表展示所有镜像,前端用 ImageType 列区分
 //
+// 业务:用户希望一个统一列表展示所有镜像,前端用 image_type 列区分
+//
 // 并发 5 跑两组:
-//   - self 镜像(ImageType=Self,过滤掉 system/others/marketplace)
-//   - shared 镜像(ImageType=Others,别人共享给我们的)
+//   - self 镜像(ImageOwnerAlias=self:用户私有/主动分享给他人的),由 fetchAllImagesInRegion 内部传 ImageOwnerAlias=self 调 API
+//   - shared 镜像(ImageOwnerAlias=others:别人共享给当前账号的 + 公开社区镜像),由 fetchAllSharedImagesInRegion 内部传 ImageOwnerAlias=others
+//
+// 跨 self/shared 去重:同一 ImageId 在 self 与 shared 都返回时,只在 self 端保留
+//
+//	(ImageOwnerAlias=self 才是"我的镜像",ImageOwnerAlias=others 表示"别人分享给我")
 func (c *Client) ListAllImagesAllRegions() (selfList, sharedList []Image, err error) {
 	regions, err := c.DescribeAllRegions()
 	if err != nil {
@@ -431,6 +445,7 @@ func (c *Client) ListAllImagesAllRegions() (selfList, sharedList []Image, err er
 	close(results)
 
 	// 去重:同一 ImageId 在多个 region 出现时只保留一份(第一次出现为准)
+	// 跨 self/shared 兜底:同一 ImageId 在两边都出现时,**只保留 self 端**
 	selfMap := make(map[string]Image, 64)
 	sharedMap := make(map[string]Image, 32)
 	for r := range results {
@@ -443,6 +458,9 @@ func (c *Client) ListAllImagesAllRegions() (selfList, sharedList []Image, err er
 			}
 		}
 		for _, img := range r.shared {
+			if _, inSelf := selfMap[img.ImageID]; inSelf {
+				continue
+			}
 			if _, ok := sharedMap[img.ImageID]; !ok {
 				sharedMap[img.ImageID] = img
 			}

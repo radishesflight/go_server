@@ -19,7 +19,6 @@ import (
 	"go_server/config"
 	"go_server/internal/model"
 	ecspkg "go_server/pkg/aliyun/ecs"
-	"gorm.io/gorm"
 )
 
 // 同步状态(进程内单例,前端可查)
@@ -149,8 +148,25 @@ func imgToModel(img ecspkg.Image, imgType string, snapshotAt time.Time) model.Al
 		SizeGB:          img.Size,
 		Status:          img.Status,
 		Description:     img.Description,
+		ImageCreatedAt:  parseAliyunCreationTime(img.CreationTime),
 		SnapshotAt:      snapshotAt,
 	}
+}
+
+// parseAliyunCreationTime 把阿里云 ISO8601 时间字符串(例 2025-11-12T06:56:21Z)
+// 转成 *time.Time。失败时返回 nil(老镜像或 API 偶发缺失字段安全兜底)。
+func parseAliyunCreationTime(s string) *time.Time {
+	if s == "" {
+		return nil
+	}
+	// 阿里云标准的 RFC3339 也可能带小数秒,先试标准再试 Naive
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return &t
+	}
+	if t, err := time.Parse("2006-01-02T15:04:05Z", s); err == nil {
+		return &t
+	}
+	return nil
 }
 
 // ListImagesFromDB 列表查询(从本地 DB 读,毫秒级)
@@ -190,6 +206,3 @@ func ListImageRegionsFromDB() ([]string, error) {
 		Pluck("region_id", &regions).Error
 	return regions, err
 }
-
-// ensure compile time gorm import is used(避免 import 未用报错)
-var _ = gorm.ErrRecordNotFound

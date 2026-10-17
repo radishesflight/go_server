@@ -121,16 +121,3 @@ func translateSyncErr(c *gin.Context, err error) {
 		handler.Error(c, handler.CodeUnknown, "同步失败: "+err.Error())
 	}
 }
-
-// 旧 handler — 保留兼容(暂时不再注册路由)
-type _ = struct{}
-
-// 旧 RefreshImages / ListSharedImages / RefreshSharedImages 接口标记废弃,走 DB 化后不用实时接口
-// 但保留类型以便 grep 到
-type (
-	// DeprecatedRefreshImages POST /api/serverDeploy/imageList/refresh(已废弃)
-	DeprecatedRefreshImages struct{}
-
-	// DeprecatedListSharedImages GET /api/serverDeploy/imageList/shared(已废弃)
-	DeprecatedListSharedImages struct{}
-)
