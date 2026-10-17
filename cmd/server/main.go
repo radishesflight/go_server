@@ -61,6 +61,7 @@ func main() {
 			&model.OperationLog{},
 			&model.AliyunImage{},     // 2026-10-17 新增:阿里云镜像本地快照
 			&model.CloudCredential{}, // 2026-10-17 新增:云平台凭证(阿里云/腾讯云 AccessKey 管理)
+			&model.CloudServer{},     // 2026-10-17 新增:云服务器本地快照(由凭证同步触发)
 		}
 		for _, m := range models {
 			if err := model.DB.AutoMigrate(m); err != nil {

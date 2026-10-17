@@ -66,10 +66,13 @@ const (
 	CodePackageNoDeployTarget = 5011 // 代码包未配置部署目标(asset/asset_path)
 	CodePackagePullFail       = 5012 // 代码包部署失败(JMS 任务执行失败或资产不可达)
 
-	// 9xxx serverDeploy 子模块专用(2026-10-17 凭证模块新增)
+	// 9xxx serverDeploy 子模块专用(2026-10-17 凭证 + 服务器模块新增)
 	// 注:CodeAliyunECSNotConfig(9001)定义在 handler/serverDeploy/image.go 里
-	CodeCloudCredentialNotFound = 9010 // 云平台凭证不存在
-	CodeCloudCredentialNameDup  = 9011 // 同名同类型凭证已存在
+	CodeCloudCredentialNotFound    = 9010 // 云平台凭证不存在
+	CodeCloudCredentialNameDup     = 9011 // 同名同类型凭证已存在
+	CodeCloudServerSyncFail        = 9020 // 云服务器同步失败
+	CodeCloudServerNoCredentials   = 9021 // 没有可同步的阿里云凭证
+	CodeCloudServerSyncUnsupported = 9022 // 暂仅支持阿里云
 
 	// 9xxx 通用
 	CodeUnknown = 9999 // 未分类失败

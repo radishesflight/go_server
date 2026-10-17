@@ -105,7 +105,183 @@ type Image struct {
 	Usage           string `json:"Usage"`
 }
 
-// DescribeImagesResp DescribeImages 响应
+// Instance 阿里云 ECS 实例(DescribeInstances.Instances.Instance 的最小子集,2026-10-17 新增)
+//
+// 字段对应官方文档:
+//
+//	https://help.aliyun.com/zh/ecs/developer-reference/api-describeinstances
+//
+// IP 字段(PrivateIpAddress / PublicIpAddress)在阿里云响应里是嵌套对象:{ IpAddress: [...] },
+// 这里专门定义嵌套类型,client 在 DescribeInstancesAllRegions 返回前调用 extractInstanceIPs
+// 把 IpAddress[0] 拼到顶层 PrivateIP/PublicIP 字符串,方便业务层直接用。
+type ipAddressList struct {
+	IpAddress []string `json:"IpAddress"`
+}
+
+type Instance struct {
+	InstanceID          string        `json:"InstanceId"`
+	InstanceName        string        `json:"InstanceName"`
+	HostName            string        `json:"HostName"`
+	RegionID            string        `json:"RegionId"`
+	ZoneID              string        `json:"ZoneId"`
+	InstanceType        string        `json:"InstanceType"`
+	Status              string        `json:"Status"` // Running / Stopped / Starting 等
+	CPU                 int           `json:"Cpu"`    // 核数
+	Memory              int           `json:"Memory"` // MiB
+	OSName              string        `json:"OSName"`
+	OSType              string        `json:"OSType"`
+	ImageID             string        `json:"ImageId"`
+	InstanceNetworkType string        `json:"InstanceNetworkType"`
+	CreationTime        string        `json:"CreationTime"` // ISO8601 UTC
+	ExpiredTime         string        `json:"ExpiredTime"`  // ISO8601 UTC(后付费可能空)
+	PrivateIpAddress    ipAddressList `json:"PrivateIpAddress"`
+	PublicIpAddress     ipAddressList `json:"PublicIpAddress"`
+	// VPC 实例的内网 IP 改放在 VpcAttributes.PrivateIpAddress.IpAddress[0](2026-10-17 实测)
+	// 经典网络实例顶层 PrivateIpAddress 才有值,VPC 那个是空数组
+	VpcAttributes struct {
+		PrivateIpAddress ipAddressList `json:"PrivateIpAddress"`
+		VpcID            string        `json:"VpcId"`
+		VSwitchID        string        `json:"VSwitchId"`
+	} `json:"VpcAttributes"`
+	// 提取后的扁平字段(由 extractInstanceIPs 写入),service 直接用
+	PrivateIP string `json:"-"`
+	PublicIP  string `json:"-"`
+}
+
+// DescribeInstancesResp DescribeInstances 响应
+type DescribeInstancesResp struct {
+	RequestID  string `json:"RequestId"`
+	TotalCount int    `json:"TotalCount"`
+	PageNumber int    `json:"PageNumber"`
+	PageSize   int    `json:"PageSize"`
+	Instances  struct {
+		Instance []Instance `json:"Instance"`
+	} `json:"Instances"`
+	RegionID string `json:"RegionId"`
+}
+
+// describeInstances 列实例(底层 API 调用,2026-10-17 新增)
+//
+// Action: DescribeInstances
+// region: 必填
+// pageSize: 1-100
+// pageNumber: >=1
+func (c *Client) describeInstances(region string, pageSize, pageNumber int) (*DescribeInstancesResp, error) {
+	if region == "" {
+		region = c.defaultRegion
+	}
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	if pageNumber <= 0 {
+		pageNumber = 1
+	}
+	params := url.Values{}
+	params.Set("RegionId", region)
+	params.Set("PageSize", strconv.Itoa(pageSize))
+	params.Set("PageNumber", strconv.Itoa(pageNumber))
+	// 注:阿里云 v1 DescribeInstances 的 Status 参数是单值,逗号分隔多值并不被识别,
+	// 实测传 "Running,Stopped" 会拉到 0 个(API 试图把字面字符串当一个状态匹配)
+	// 因此这里不传 Status,前端按 Status 列筛选即可(filter by column)
+	_ = "不传 Status — 阿里云 v1 不支持多值逗号分隔"
+
+	var out DescribeInstancesResp
+	if err := c.call("DescribeInstances", region, params, &out); err != nil {
+		return nil, err
+	}
+	// 阿里云 DescribeInstances 响应里 Instance 不带 RegionId(只在请求里指定),手动补上
+	for i := range out.Instances.Instance {
+		if out.Instances.Instance[i].RegionID == "" {
+			out.Instances.Instance[i].RegionID = region
+		}
+	}
+	return &out, nil
+}
+
+// extractInstanceIPs 把嵌套 PrivateIpAddress.IpAddress[0] / PublicIpAddress.IpAddress[0]
+// 提取成扁平 string(2026-10-17):service 不用关心 nested,直接读 .PrivateIP
+//
+// 多 fallback(2026-10-17 实测):
+//   - 经典网络实例:顶层 PrivateIpAddress.IpAddress[0]
+//   - VPC 实例(本项目生产账号都是 VPC):VpcAttributes.PrivateIpAddress.IpAddress[0]
+//   - 兜底:NetworkInterfaces[0].PrimaryIpAddress(更老 API,极少用)
+func extractInstanceIPs(insts []Instance) {
+	for i := range insts {
+		if len(insts[i].PrivateIpAddress.IpAddress) > 0 {
+			insts[i].PrivateIP = insts[i].PrivateIpAddress.IpAddress[0]
+		} else if len(insts[i].VpcAttributes.PrivateIpAddress.IpAddress) > 0 {
+			insts[i].PrivateIP = insts[i].VpcAttributes.PrivateIpAddress.IpAddress[0]
+		}
+		if len(insts[i].PublicIpAddress.IpAddress) > 0 {
+			insts[i].PublicIP = insts[i].PublicIpAddress.IpAddress[0]
+		}
+	}
+}
+
+// fetchAllInstancesInRegion 单 region 全量拉实例(自动翻页)
+// 失败返回 (inst, err);err 不为 nil 表示 region 拉取失败,业务可以继续拉别的 region
+func (c *Client) fetchAllInstancesInRegion(region string) ([]Instance, error) {
+	const pageSize = 100
+	all := make([]Instance, 0, 50)
+	for page := 1; ; page++ {
+		r, err := c.describeInstances(region, pageSize, page)
+		if err != nil {
+			return all, err
+		}
+		all = append(all, r.Instances.Instance...)
+		if len(r.Instances.Instance) < pageSize {
+			break
+		}
+	}
+	extractInstanceIPs(all)
+	return all, nil
+}
+
+// DescribeInstancesAllRegions 跨所有 region 聚合(2026-10-17 新增)
+// 单个 region 失败不影响其他 region(在 result.err 上报)
+func (c *Client) DescribeInstancesAllRegions() (instances []Instance, errs map[string]error, err error) {
+	regions, err := c.DescribeAllRegions()
+	if err != nil {
+		return nil, nil, fmt.Errorf("列 region 失败: %w", err)
+	}
+
+	type regResult struct {
+		region string
+		inst   []Instance
+		err    error
+	}
+	results := make(chan regResult, len(regions))
+	sem := make(chan struct{}, 5)
+	var wg sync.WaitGroup
+
+	for _, r := range regions {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(rg Region) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			inst, err := c.fetchAllInstancesInRegion(rg.RegionID)
+			results <- regResult{region: rg.RegionID, inst: inst, err: err}
+		}(r)
+	}
+	wg.Wait()
+	close(results)
+
+	all := make([]Instance, 0, 128)
+	errsMap := make(map[string]error, 0)
+	for r := range results {
+		if r.err != nil {
+			errsMap[r.region] = r.err
+			continue
+		}
+		all = append(all, r.inst...)
+	}
+	return all, errsMap, nil
+}
+
 type DescribeImagesResp struct {
 	RequestID  string `json:"RequestId"`
 	TotalCount int    `json:"TotalCount"` // 注意:阿里云这里返回的是 int 但分页要看 PageNumber/PageSize

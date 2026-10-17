@@ -10,12 +10,18 @@
 //	  GET    /images/sync/status              查询同步状态
 //	  GET    /regions                         列已同步的 region(从 DB)
 //
-//	云平台凭证管理(2026-10-17 新增,菜单 code=credentials):
+//	云平台凭证管理(菜单 code=credentials):
 //	  GET    /credentials?type=&keyword=      列表(secret_key mask 隐藏)
 //	  GET    /credentials/:id                详情(secret_key 明文)
 //	  POST   /credentials                    新增
 //	  PUT    /credentials/:id                编辑
 //	  DELETE /credentials/:id                删除(软删)
+//
+//	云服务器列表管理(2026-10-17 新增,菜单 code=servers):
+//	  GET    /servers?credential_id=&vendor=&region=&keyword=
+//	                                           列服务器(从本地 DB,毫秒级)
+//	  POST   /servers/sync?credential_id=N    触发同步(N 缺省=所有 aliyun 凭证)
+//	  GET    /servers/sync/status             查询同步状态(轮询)
 package serverDeploy
 
 import (
@@ -38,11 +44,16 @@ func ServerDeployRoutes(rg *gin.RouterGroup) {
 		g.GET("/images/sync/status", serverDeploy.SyncImagesStatus)
 		g.GET("/regions", serverDeploy.ListRegions)
 
-		// 云平台凭证管理(2026-10-17 新增)
+		// 云平台凭证管理
 		g.GET("/credentials", serverDeploy.ListCloudCredentials)
 		g.GET("/credentials/:id", serverDeploy.GetCloudCredential)
 		g.POST("/credentials", serverDeploy.CreateCloudCredential)
 		g.PUT("/credentials/:id", serverDeploy.UpdateCloudCredential)
 		g.DELETE("/credentials/:id", serverDeploy.DeleteCloudCredential)
+
+		// 云服务器列表管理(2026-10-17 新增)
+		g.GET("/servers", serverDeploy.ListCloudServers)
+		g.POST("/servers/sync", serverDeploy.SyncCloudServers)
+		g.GET("/servers/sync/status", serverDeploy.SyncCloudServersStatus)
 	}
 }
