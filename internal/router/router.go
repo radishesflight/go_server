@@ -1,16 +1,17 @@
 // Package router - HTTP 路由注册
 //
 // 路由总览(/api 前缀):
-//   POST   /api/login                       公开
-//   POST   /api/logout                      公开
-//   GET    /api/user/info                   需 AuthMiddleware
-//   POST   /api/upload/image                需 AuthMiddleware
-//   *      /api/system/adminUsers/*         需 Auth + Permission
-//   *      /api/system/adminRoles/*         需 Auth + Permission(注意:路径段跟 menu.code 一致)
-//   *      /api/system/adminMenus/*         需 Auth + Permission
-//   *      /api/system/roleMenu/*           需 Auth + Permission
-//   *      /api/system/departments/*        需 Auth + Permission
-//   *      /api/codeDeploy/*                需 Auth(+Permission for projects/packages)
+//
+//	POST   /api/login                       公开
+//	POST   /api/logout                      公开
+//	GET    /api/user/info                   需 AuthMiddleware
+//	POST   /api/upload/image                需 AuthMiddleware
+//	*      /api/system/adminUsers/*         需 Auth + Permission
+//	*      /api/system/adminRoles/*         需 Auth + Permission(注意:路径段跟 menu.code 一致)
+//	*      /api/system/adminMenus/*         需 Auth + Permission
+//	*      /api/system/roleMenu/*           需 Auth + Permission
+//	*      /api/system/departments/*        需 Auth + Permission
+//	*      /api/codeDeploy/*                需 Auth(+Permission for projects/packages)
 //
 // 加新路由组的步骤:
 //  1. 在 internal/router/<module>/ 加新文件(参考 system/adminUsers.go)
@@ -21,6 +22,7 @@ import (
 	"go_server/internal/handler"
 	"go_server/internal/middleware"
 	"go_server/internal/router/codeDeploy"
+	"go_server/internal/router/serverDeploy"
 	"go_server/internal/router/system"
 
 	"github.com/gin-gonic/gin"
@@ -30,13 +32,14 @@ import (
 // 由 cmd/server/main.go 启动时调一次
 //
 // 中间件链(顺序重要):
-//   gin.Logger    → 访问日志
-//   gin.Recovery  → panic 恢复
-//   middleware.CORS → 跨域
-//   ↓ /api 分组后 ↓
-//   (按路由需要)AuthMiddleware      → 鉴权
-//   (按路由需要)PermissionMiddleware → 权限校验
-//   → handler
+//
+//	gin.Logger    → 访问日志
+//	gin.Recovery  → panic 恢复
+//	middleware.CORS → 跨域
+//	↓ /api 分组后 ↓
+//	(按路由需要)AuthMiddleware      → 鉴权
+//	(按路由需要)PermissionMiddleware → 权限校验
+//	→ handler
 func SetupRouter(mode string) *gin.Engine {
 	// mode: "debug" / "release" / "test"
 	gin.SetMode(mode)
@@ -77,6 +80,9 @@ func SetupRouter(mode string) *gin.Engine {
 
 		// 代码部署
 		codeDeploy.CodeDeployRoutes(api)
+
+		// 服务器部署(2026-10-17 新增:阿里云 ECS 镜像管理)
+		serverDeploy.ServerDeployRoutes(api)
 	}
 
 	return r

@@ -5,7 +5,8 @@
 // 工作流:
 //  1. cmd/server/main.go 启动时,在 SetupRouter 之后、HTTP serve 之前调 SyncRoutes
 //  2. SyncRoutes 拿 gin.Engine.Routes() 拿到所有已注册路由
-//  3. 过滤出 /api/system/* 下、需要 PermissionMiddleware 的路由
+//  3. 过滤出 PermissionMiddleware 管理的三类前缀
+//     /api/system/*  /api/codeDeploy/*  /api/serverDeploy/*
 //  4. 对每条 (method, path):
 //     - 不存在 → 解析 path 第一段(/api/system/<code>/...)反查 admin_menus.code
 //     - 找到 menu_id → INSERT(默认 name=method+path)
@@ -50,9 +51,13 @@ func SyncRoutes(r *gin.Engine, adminRoleID uint) (*SyncRoutesResult, error) {
 	// 2. 过滤出 /api/system/* 下的(只有这些是 PermissionMiddleware 管的)
 	filtered := make([]gin.RouteInfo, 0, len(allRoutes))
 	for _, route := range allRoutes {
-		// 只同步 PermissionMiddleware 管理的两类前缀
+		// 只同步 PermissionMiddleware 管理的三类前缀
+		//   /api/system/*       系统管理
+		//   /api/codeDeploy/*   代码部署
+		//   /api/serverDeploy/* 服务器部署(2026-10-17 新增)
 		if strings.HasPrefix(route.Path, "/api/system/") ||
-			strings.HasPrefix(route.Path, "/api/codeDeploy/") {
+			strings.HasPrefix(route.Path, "/api/codeDeploy/") ||
+			strings.HasPrefix(route.Path, "/api/serverDeploy/") {
 			filtered = append(filtered, route)
 		}
 	}
@@ -98,9 +103,10 @@ func SyncRoutes(r *gin.Engine, adminRoleID uint) (*SyncRoutesResult, error) {
 		}
 
 		// 4.2 解析 module: /api/<code>/...  → code
-		//     支持 /api/system/<code>/... 和 /api/codeDeploy/<code>/...
+		//     支持 /api/system/<code>/... /api/codeDeploy/<code>/... /api/serverDeploy/<code>/...
 		pathAfterPrefix := strings.TrimPrefix(path, "/api/system/")
 		pathAfterPrefix = strings.TrimPrefix(pathAfterPrefix, "/api/codeDeploy/")
+		pathAfterPrefix = strings.TrimPrefix(pathAfterPrefix, "/api/serverDeploy/")
 		parts := strings.Split(pathAfterPrefix, "/")
 		if len(parts) == 0 || parts[0] == "" {
 			res.Skipped++

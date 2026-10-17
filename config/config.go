@@ -41,6 +41,7 @@ type Config struct {
 	CORS       CORSConfig       `yaml:"cors"`
 	Storage    StorageConfig    `yaml:"storage"`
 	Jumpserver JumpserverConfig `yaml:"jumpserver"`
+	AliyunECS  AliyunECSConfig  `yaml:"aliyun_ecs"`
 }
 
 // ServerConfig HTTP 服务
@@ -111,6 +112,22 @@ type JumpserverConfig struct {
 	BaseURL string `yaml:"base_url"`
 	Token   string `yaml:"token"`
 	OrgID   string `yaml:"org_id"`
+}
+
+// AliyunECSConfig 阿里云 ECS OpenAPI 配置
+//
+// 用途:服务器部署 → 镜像列表 模块调 DescribeImages / CopyImage / ModifyImageSharePermission
+// 协议:RPC 风格 + 签名 v1(HMAC-SHA1 + base64),HTTP method 用 GET(form-encoded query)
+//
+// 凭证可通过环境变量覆盖:ALIYUN_ECS_ACCESS_KEY / ALIYUN_ECS_SECRET_KEY / ALIYUN_ECS_DEFAULT_REGION
+//
+// 注意:access_key/secret_key 默认复用对象存储(storage)的同一对 RAM AK;
+// 这里允许单独覆盖是为了:某些账号 OSS 用子账号,ECS 用主账号(或反之)
+type AliyunECSConfig struct {
+	AccessKey      string `yaml:"access_key"`      // 阿里云 RAM AccessKeyId
+	SecretKey      string `yaml:"secret_key"`      // 阿里云 RAM AccessKeySecret
+	DefaultRegion  string `yaml:"default_region"`  // 默认 region(查询/复制时如不指定,用这个)
+	EndpointSuffix string `yaml:"endpoint_suffix"` // API endpoint 后缀,默认 "aliyuncs.com"
 }
 
 // InitConfig 从 yaml 加载配置,然后用环境变量覆盖
@@ -238,6 +255,20 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := os.Getenv("JUMPSERVER_ORG_ID"); v != "" {
 		c.Jumpserver.OrgID = v
+	}
+
+	// aliyun ecs (env 覆盖:用 ALIYUN_ECS_* 前缀避免和对象存储 STORAGE_* 冲突)
+	if v := os.Getenv("ALIYUN_ECS_ACCESS_KEY"); v != "" {
+		c.AliyunECS.AccessKey = v
+	}
+	if v := os.Getenv("ALIYUN_ECS_SECRET_KEY"); v != "" {
+		c.AliyunECS.SecretKey = v
+	}
+	if v := os.Getenv("ALIYUN_ECS_DEFAULT_REGION"); v != "" {
+		c.AliyunECS.DefaultRegion = v
+	}
+	if v := os.Getenv("ALIYUN_ECS_ENDPOINT_SUFFIX"); v != "" {
+		c.AliyunECS.EndpointSuffix = v
 	}
 }
 

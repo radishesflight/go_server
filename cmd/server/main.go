@@ -59,6 +59,7 @@ func main() {
 			&model.BusinessAssetPaths{},
 			&model.CodePackages{},
 			&model.OperationLog{},
+			&model.AliyunImage{}, // 2026-10-17 新增:阿里云镜像本地快照
 		}
 		for _, m := range models {
 			if err := model.DB.AutoMigrate(m); err != nil {
