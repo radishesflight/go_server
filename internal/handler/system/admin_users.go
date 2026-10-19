@@ -156,3 +156,67 @@ func DeleteAdminUsers(c *gin.Context) {
 	}
 	handler.Success(c, nil)
 }
+
+// UpdateMyProfileReq 个人中心 - 当前用户改自己的请求体
+//
+// 2026-10-19 新增
+//   - email / phone / newPassword: 都可选,空字符串 = 不改
+//   - oldPassword: 必填(即使不改密码也要输,做身份二次确认)
+type UpdateMyProfileReq struct {
+	Email       string `json:"email"`
+	Phone       string `json:"phone"`
+	NewPassword string `json:"new_password"`
+	OldPassword string `json:"old_password" binding:"required"`
+}
+
+// UpdateMyProfile 个人中心 - 当前用户改自己
+//
+// 2026-10-19 新增:挂在 AuthMiddleware 下,不走 PermissionMiddleware,
+//
+//	所有登录用户(包括普通角色如"前端")都能调
+//	id 从 c.Get("user_id") 拿,前端不传,防越权改他人
+//
+// PUT /api/system/adminUsers/me
+func UpdateMyProfile(c *gin.Context) {
+	var req UpdateMyProfileReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handler.Error(c, handler.CodeParamsInvalid, "参数错误")
+		return
+	}
+
+	// 从 token 拿当前用户 id(AuthMiddleware 已注入)
+	uidVal, exists := c.Get("user_id")
+	if !exists {
+		handler.Error(c, handler.CodeTokenMissing, "未登录")
+		return
+	}
+	uid, ok := uidVal.(uint)
+	if !ok {
+		// AuthMiddleware 注入的可能是 uint64,兼容一下
+		switch v := uidVal.(type) {
+		case uint64:
+			uid = uint(v)
+		default:
+			handler.Error(c, handler.CodeUnknown, "用户ID类型异常")
+			return
+		}
+	}
+
+	u, err := adminUserSvc.UpdateMe(uid, req.Email, req.Phone, req.NewPassword, req.OldPassword)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrUserNotFound):
+			handler.Error(c, handler.CodeUserNotFound, "用户不存在")
+		case errors.Is(err, service.ErrUserPasswordWrong):
+			handler.Error(c, handler.CodeUserPassword, "当前密码错误")
+		case errors.Is(err, service.ErrUserPasswordHash):
+			handler.Error(c, handler.CodeUnknown, "密码加密失败")
+		case errors.Is(err, service.ErrUserInvalidID):
+			handler.Error(c, handler.CodeParamsInvalid, "无效的用户ID")
+		default:
+			handler.Error(c, handler.CodeUnknown, "更新失败")
+		}
+		return
+	}
+	handler.Success(c, u)
+}

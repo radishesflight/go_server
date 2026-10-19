@@ -22,6 +22,7 @@ var (
 	ErrUserNotFound      = errors.New("用户不存在")
 	ErrUserNameDuplicate = errors.New("用户名已存在")
 	ErrUserPasswordHash  = errors.New("密码加密失败")
+	ErrUserPasswordWrong = errors.New("当前密码错误")
 	ErrUserCreate        = errors.New("创建用户失败")
 	ErrUserUpdate        = errors.New("更新用户失败")
 	ErrUserDelete        = errors.New("删除用户失败")
@@ -157,4 +158,59 @@ func (s *AdminUserService) Delete(id int) error {
 		return ErrUserDelete
 	}
 	return nil
+}
+
+// UpdateMe 个人中心 - 当前用户改自己(不依赖 PermissionMiddleware)
+//
+// 2026-10-19 新增:让"个人中心"弹窗能改邮箱/手机号/密码
+//   - id: 从 c.Get("user_id") 拿,前端不传(防止越权)
+//   - email/phone: 可选,空字符串 = 不改
+//   - newPassword: 可选,空字符串 = 不改
+//   - oldPassword: 必填(任何修改都要求输入当前密码二次确认)
+//     即使只改邮箱/手机号,也要验证旧密码,防被人留在电脑前被改
+//   - 拒绝改 username / role_id / status / department_id(只读)
+func (s *AdminUserService) UpdateMe(id uint, email, phone, newPassword, oldPassword string) (map[string]interface{}, error) {
+	if id == 0 {
+		return nil, ErrUserInvalidID
+	}
+	if oldPassword == "" {
+		return nil, ErrUserPasswordWrong
+	}
+
+	var user model.AdminUsers
+	if err := model.DB.First(&user, id).Error; err != nil {
+		return nil, ErrUserNotFound
+	}
+
+	// 验证旧密码(防越权 — 任何修改都要先确认当前密码)
+	if !user.CheckPassword(oldPassword) {
+		return nil, ErrUserPasswordWrong
+	}
+
+	updates := map[string]interface{}{}
+	if email != "" {
+		updates["email"] = email
+	}
+	if phone != "" {
+		updates["phone"] = phone
+	}
+	if newPassword != "" {
+		// 改密码:用 SetPassword 走 bcrypt
+		if err := user.SetPassword(newPassword); err != nil {
+			return nil, ErrUserPasswordHash
+		}
+		updates["password"] = user.Password
+	}
+
+	// 什么字段都没传(只验证了旧密码),不写库
+	if len(updates) == 0 {
+		return formatUser(user), nil
+	}
+
+	if err := model.DB.Model(&user).Updates(updates).Error; err != nil {
+		return nil, ErrUserUpdate
+	}
+
+	model.DB.First(&user, id)
+	return formatUser(user), nil
 }
