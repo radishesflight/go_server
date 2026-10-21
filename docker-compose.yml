@@ -9,7 +9,7 @@ services:
     networks: [stack]
 
   go:
-    image: registry.cn-hangzhou.aliyuncs.com/m-robert/go_server:1.1.0
+    image: registry.cn-hangzhou.aliyuncs.com/m-robert/go_server:1.2.0
     container_name: go_server_app
     restart: unless-stopped
     expose: ["8080"]
