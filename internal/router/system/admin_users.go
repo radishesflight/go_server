@@ -24,5 +24,7 @@ func AdminUsersRoutes(rg *gin.RouterGroup) {
 		adminUsers.POST("", system.CreateAdminUsers)
 		adminUsers.PUT("/:id", system.UpdateAdminUsers)
 		adminUsers.DELETE("/:id", system.DeleteAdminUsers)
+		// 2026-10-20 新增:解除登录限制(必须是 /unlock/:id 形态,避免和 /:id 冲突)
+		adminUsers.POST("/unlock/:id", system.UnlockAdminUser)
 	}
 }

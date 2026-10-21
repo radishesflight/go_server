@@ -7,7 +7,9 @@
 *.exe~
 *.dll
 *.so
-*.dylib
+*.dylibK
+*.yamlbak
+*.bak
 
 # Makefile 输出的 bin/ 目录
 /bin/

@@ -1,8 +1,9 @@
 // Package model 提供 GORM 数据模型 + DB/RDB 初始化
 //
 // 全局变量:
-//   DB  - gorm.DB(MySQL 连接)
-//   RDB - redis.Client(Redis 连接)
+//
+//	DB  - gorm.DB(MySQL 连接)
+//	RDB - redis.Client(Redis 连接)
 //
 // 重要:DB / RDB 是 package-level 变量,在 service 层直接使用。
 // handler 层**不要**直接访问,必须通过 service。
@@ -36,12 +37,13 @@ var DB *gorm.DB
 var RDB *redis.Client
 
 // BaseModel 基础字段,所有业务表都嵌入
-//   ID        - 主键自增
-//   CreatedAt - 创建时间
-//   UpdatedAt - 更新时间
-//   DeletedAt - 软删除时间(gorm.DeletedAt 类型,有专门的软删除语义)
-//     gorm:"index" 会自动建索引
-//     json:"-" 不暴露给前端(软删状态前端不需要)
+//
+//	ID        - 主键自增
+//	CreatedAt - 创建时间
+//	UpdatedAt - 更新时间
+//	DeletedAt - 软删除时间(gorm.DeletedAt 类型,有专门的软删除语义)
+//	  gorm:"index" 会自动建索引
+//	  json:"-" 不暴露给前端(软删状态前端不需要)
 type BaseModel struct {
 	ID        uint           `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time      `gorm:"type:datetime" json:"created_at"`
@@ -52,6 +54,17 @@ type BaseModel struct {
 // FormatTime 把 time.Time 格式化为前端友好的字符串
 // 输出:"2006-01-02 15:04:05"
 func FormatTime(t time.Time) string {
+	return t.Format("2006-01-02 15:04:05")
+}
+
+// FormatTimePtr 把 *time.Time 格式化为前端友好的字符串
+// nil 返回 ""(JSON 里就是 null,前端用 is_locked 判断即可;这里给空字符串让前端 :default='-' 兜底更顺手)
+// 输出:"2006-01-02 15:04:05" 或 ""
+// 2026-10-20 加登录限制时新增,给 LockedAt 这类可空时间用
+func FormatTimePtr(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
 	return t.Format("2006-01-02 15:04:05")
 }
 

@@ -12,6 +12,7 @@ package service
 
 import (
 	"errors"
+	"time"
 
 	"go_server/internal/model"
 )
@@ -26,6 +27,7 @@ var (
 	ErrUserCreate        = errors.New("创建用户失败")
 	ErrUserUpdate        = errors.New("更新用户失败")
 	ErrUserDelete        = errors.New("删除用户失败")
+	ErrUserUnlock        = errors.New("解除登录限制失败")
 )
 
 // AdminUserService 用户管理业务
@@ -46,15 +48,18 @@ func formatUser(user model.AdminUsers) map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"id":         user.ID,
-		"username":   user.Username,
-		"email":      user.Email,
-		"phone":      user.Phone,
-		"status":     user.Status,
-		"role_id":    user.RoleID,
-		"role":       roleName,
-		"created_at": model.FormatTime(user.CreatedAt),
-		"updated_at": model.FormatTime(user.UpdatedAt),
+		"id":           user.ID,
+		"username":     user.Username,
+		"email":        user.Email,
+		"phone":        user.Phone,
+		"status":       user.Status,
+		"role_id":      user.RoleID,
+		"role":         roleName,
+		"failed_count": user.FailedCount,                                // 2026-10-20 登录失败计数
+		"locked_at":    model.FormatTimePtr(user.LockedAt),              // 2026-10-20 锁定时间(nil 时为 null)
+		"is_locked":    user.LockedAt != nil && !user.LockedAt.IsZero(), // 2026-10-20 列表展示用,前端不用判 null
+		"created_at":   model.FormatTime(user.CreatedAt),
+		"updated_at":   model.FormatTime(user.UpdatedAt),
 	}
 }
 
@@ -156,6 +161,37 @@ func (s *AdminUserService) Delete(id int) error {
 	}
 	if err := model.DB.Unscoped().Delete(&model.AdminUsers{}, id).Error; err != nil {
 		return ErrUserDelete
+	}
+	return nil
+}
+
+// UnlockUser 解除登录限制(2026-10-20 新增)
+//
+// 业务背景:admin_users 表里 FailedCount 和 LockedAt 字段被连续失败登录逻辑写到 3 次后置上,
+//
+//	admin 在前端列表点"解除登录限制"按钮 → 调本方法 → 清零两个字段,允许用户重新登录。
+//
+// 行为:
+//   - id 必须 > 0
+//   - 即使当前未锁定,也允许调(幂等,清零计数是 no-op)
+//   - 失败返 ErrUserNotFound / ErrUserUnlock
+func (s *AdminUserService) UnlockUser(id int) error {
+	if id <= 0 {
+		return ErrUserInvalidID
+	}
+	var user model.AdminUsers
+	if err := model.DB.First(&user, id).Error; err != nil {
+		return ErrUserNotFound
+	}
+
+	now := time.Now() // 留作日志需要时使用,这里不写库
+	_ = now
+
+	if err := model.DB.Model(&model.AdminUsers{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"failed_count": 0,
+		"locked_at":    nil,
+	}).Error; err != nil {
+		return ErrUserUnlock
 	}
 	return nil
 }

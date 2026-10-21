@@ -23,6 +23,7 @@ package service
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -36,7 +37,16 @@ var (
 	ErrAuthUserNoRole     = errors.New("该用户未分配角色")
 	ErrAuthRoleNotFound   = errors.New("角色不存在")
 	ErrAuthTokenGenFailed = errors.New("令牌生成失败")
+	ErrAuthUserLocked     = errors.New("账号已被锁定,请联系管理员解锁") // 2026-10-20 连续 3 次密码错后锁定
 )
+
+// MaxLoginFailures 登录失败阈值(达此值即锁定)
+const MaxLoginFailures = 3
+
+// isLocked 判断账号是否被锁定(LockedAt 非空且未到永久,这里就用 LockedAt 非空判断)
+func isLocked(u *model.AdminUsers) bool {
+	return u.LockedAt != nil && !u.LockedAt.IsZero()
+}
 
 // AuthService 登录 / 注销 / 当前用户 业务
 type AuthService struct{}
@@ -46,14 +56,45 @@ func NewAuthService() *AuthService { return &AuthService{} }
 
 // Login 处理登录
 // 返回:token, user(map), menus(树), permissions
+//
+// 2026-10-20 加登录限制:
+//   - LockedAt 非空 → 账号已锁定,直接拒绝(密码对也不让登),让管理员解锁
+//   - 密码错:failed_count++,达 3 次置 LockedAt = now() 并拒绝
+//   - 密码对:登录成功后清零 failed_count + LockedAt(让用户可以重新从干净状态开始)
 func (s *AuthService) Login(username, password string) (string, gin.H, []*MenuTreeNode, []string, error) {
 	var user model.AdminUsers
 	if err := model.DB.Where("username = ?", username).First(&user).Error; err != nil {
 		return "", nil, nil, nil, ErrAuthUserNotFound
 	}
 
+	// 已被锁 → 直接拒绝,密码正确也不让登(必须 admin 解锁)
+	if isLocked(&user) {
+		return "", nil, nil, nil, ErrAuthUserLocked
+	}
+
 	if !user.CheckPassword(password) {
+		// 密码错:计数 +1,达到阈值就锁定
+		user.FailedCount++
+		if user.FailedCount >= MaxLoginFailures {
+			now := time.Now()
+			user.LockedAt = &now
+		}
+		// 用 Updates 写库(只写两列,不会误改其他字段;gorm 默认忽略零值,所以 FailedCount 从 0 → 1 必须显式写)
+		model.DB.Model(&model.AdminUsers{}).Where("id = ?", user.ID).
+			Updates(map[string]interface{}{
+				"failed_count": user.FailedCount,
+				"locked_at":    user.LockedAt,
+			})
 		return "", nil, nil, nil, ErrAuthWrongPassword
+	}
+
+	// 密码正确:登录成功后清零失败计数 + 锁定状态
+	if user.FailedCount > 0 || user.LockedAt != nil {
+		model.DB.Model(&model.AdminUsers{}).Where("id = ?", user.ID).
+			Updates(map[string]interface{}{
+				"failed_count": 0,
+				"locked_at":    nil,
+			})
 	}
 
 	if user.RoleID == 0 {

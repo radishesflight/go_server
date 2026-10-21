@@ -1,16 +1,17 @@
 // Package handler auth.go - 登录 / 注销 / 当前用户 HTTP 入口
 //
 // 业务处理流程:
-//  - Login:        校验参数 → 调 service.Login → 翻译业务码
-//  - Logout:       取 token → 调 service.Logout
-//  - GetCurrentUser: 从 gin.Context 拿 user_id/role_id(middleware/auth.go 设置的) → service.GetCurrentUser
+//   - Login:        校验参数 → 调 service.Login → 翻译业务码
+//   - Logout:       取 token → 调 service.Logout
+//   - GetCurrentUser: 从 gin.Context 拿 user_id/role_id(middleware/auth.go 设置的) → service.GetCurrentUser
 //
 // 业务码翻译表(与 internal/handler/bizcode.go 保持一致):
-//  service.ErrAuthUserNotFound  → CodeUserNotFound  (1004)
-//  service.ErrAuthWrongPassword → CodeUserPassword  (1006)
-//  service.ErrAuthUserNoRole    → CodeUserNoRole    (1007)
-//  service.ErrAuthRoleNotFound  → CodeRoleNotFound  (1008)
-//  service.ErrAuthTokenGenFailed → CodeAuthFail     (1001)
+//
+//	service.ErrAuthUserNotFound  → CodeUserNotFound  (1004)
+//	service.ErrAuthWrongPassword → CodeUserPassword  (1006)
+//	service.ErrAuthUserNoRole    → CodeUserNoRole    (1007)
+//	service.ErrAuthRoleNotFound  → CodeRoleNotFound  (1008)
+//	service.ErrAuthTokenGenFailed → CodeAuthFail     (1001)
 package handler
 
 import (
@@ -56,6 +57,8 @@ func Login(c *gin.Context) {
 			Error(c, CodeRoleNotFound, "角色不存在")
 		case errors.Is(err, service.ErrAuthTokenGenFailed):
 			Error(c, CodeAuthFail, "令牌生成失败")
+		case errors.Is(err, service.ErrAuthUserLocked):
+			Error(c, CodeUserLocked, "账号已被锁定,请联系管理员解锁")
 		default:
 			Error(c, CodeUnknown, "登录失败")
 		}

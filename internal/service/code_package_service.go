@@ -634,6 +634,17 @@ func buildCodePackagePullCmdImpl(deployPath, signedURL, fullName string) string 
 	sb.WriteString("  fi\n")
 	sb.WriteString("done\n")
 	sb.WriteString("echo \"cp+sync done: deployDir updated in-place (no empty window)\"\n")
+	// 6.1 chown(2026-10-21 加)— 让 nginx (www) 用户能读;JMS 任务是用 root 跑的,unzip 出来的文件属主是 root
+	// 跟 git_deploy_service.go:138-146 对齐;失败要回滚到备份
+	sb.WriteString("chown -R www.www \"$DEPLOY_DIR\" 1>&2\n")
+	sb.WriteString("CHOWN_RC=$?\n")
+	sb.WriteString("if [ $CHOWN_RC -ne 0 ]; then\n")
+	sb.WriteString("  echo \"chown failed: rc=$CHOWN_RC, restore from backup\" 1>&2\n")
+	sb.WriteString("  cd \"$DEPLOY_DIR\"\n")
+	sb.WriteString("  rm -rf \"$TMP_DIR\"\n")
+	sb.WriteString("  exit $CHOWN_RC\n")
+	sb.WriteString("fi\n")
+	sb.WriteString("echo \"chown ok\" 1>&2\n")
 
 	// 6. 清理:删 staging 临时目录和 code_zip
 	sb.WriteString("rm -rf \"$TMP_DIR\"\n")

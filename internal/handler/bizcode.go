@@ -35,6 +35,7 @@ const (
 	CodeRoleNotFound  = 1008 // 角色不存在
 	CodeRoleDuplicate = 1009 // 角色名称已存在
 	CodeMenuNotFound  = 1010 // 菜单不存在
+	CodeUserLocked    = 1011 // 账号已被锁定(连续 3 次密码错),需管理员解锁
 
 	// 2xxx 权限
 	CodeNoPermission = 2001 // 无权限

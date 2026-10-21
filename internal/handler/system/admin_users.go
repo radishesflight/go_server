@@ -157,6 +157,38 @@ func DeleteAdminUsers(c *gin.Context) {
 	handler.Success(c, nil)
 }
 
+// UnlockAdminUser 解除登录限制(2026-10-20 新增)
+//
+// POST /api/system/adminUsers/unlock/:id
+// 业务码:
+//
+//	service.ErrUserInvalidID → CodeParamsInvalid
+//	service.ErrUserNotFound  → CodeUserNotFound
+//	service.ErrUserUnlock    → CodeUnknown
+//
+// 权限:由 PermissionMiddleware 控(必须 admin 角色拥有该 op)
+// 行为:清零 failed_count + locked_at,允许用户重新登录
+func UnlockAdminUser(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		handler.Error(c, handler.CodeParamsInvalid, "无效的用户ID")
+		return
+	}
+
+	if err := adminUserSvc.UnlockUser(id); err != nil {
+		switch {
+		case errors.Is(err, service.ErrUserInvalidID):
+			handler.Error(c, handler.CodeParamsInvalid, "无效的用户ID")
+		case errors.Is(err, service.ErrUserNotFound):
+			handler.Error(c, handler.CodeUserNotFound, "用户不存在")
+		default:
+			handler.Error(c, handler.CodeUnknown, "解除登录限制失败")
+		}
+		return
+	}
+	handler.Success(c, nil)
+}
+
 // UpdateMyProfileReq 个人中心 - 当前用户改自己的请求体
 //
 // 2026-10-19 新增
