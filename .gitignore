@@ -12,7 +12,7 @@
 *.bak
 
 # Makefile 输出的 bin/ 目录
-/bin/
+/bin/K
 
 # 测试相关
 *.test
