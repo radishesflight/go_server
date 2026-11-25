@@ -23,13 +23,14 @@ func unixMilliToTime(ms int64) time.Time {
 
 // 标准事件类型常量(写入 DB 的 event 字段)
 const (
-	EventDeploy     = "deploy"      // POST /api/codeDeploy/packages/:id/pull
-	EventUpload     = "upload"      // POST /api/codeDeploy/packages
-	EventDelete     = "delete"      // DELETE /api/codeDeploy/packages/:id
-	EventDownload   = "download"    // GET  /api/codeDeploy/packages/:id/download-url
+	EventDeploy      = "deploy"       // POST /api/codeDeploy/packages/:id/pull
+	EventUpload      = "upload"       // POST /api/codeDeploy/packages
+	EventDelete      = "delete"       // DELETE /api/codeDeploy/packages/:id
+	EventDownload    = "download"     // GET  /api/codeDeploy/packages/:id/download-url
 	EventProjectSync = "project.sync" // POST /api/codeDeploy/projects/sync
-	EventAssetSync  = "asset.sync"  // POST /api/codeDeploy/assets/sync
-	EventSyncAll    = "sync.all"    // POST /api/codeDeploy/sync
+	EventAssetSync   = "asset.sync"   // POST /api/codeDeploy/assets/sync
+	EventSyncAll     = "sync.all"     // POST /api/codeDeploy/sync
+	EventClear       = "clear"        // POST /api/codeDeploy/operation-logs/clear(按时间范围清除部署数据)
 )
 
 // TargetType 目标类型
@@ -37,6 +38,7 @@ const (
 	TargetPackage = "package"
 	TargetProject = "project"
 	TargetAsset   = "asset"
+	TargetCleanup = "cleanup" // 一键清除部署数据(按时间范围,没有单一目标)
 )
 
 // Result 标记
@@ -50,27 +52,27 @@ const JMSOutputTailLen = 2000
 
 // LogOperationParams 写日志需要的参数(可选,只填有值的字段)
 type LogOperationParams struct {
-	Event       string
-	Result      int    // ResultSuccess / ResultFail
-	Method      string
-	Path        string
-	TargetType  string
-	TargetID    uint
-	TargetName  string
-	StartedAt   int64  // unix milli,可选
-	DurationMS  int64  // 毫秒
-	JMSTaskID   string // deploy 时填
+	Event        string
+	Result       int // ResultSuccess / ResultFail
+	Method       string
+	Path         string
+	TargetType   string
+	TargetID     uint
+	TargetName   string
+	StartedAt    int64  // unix milli,可选
+	DurationMS   int64  // 毫秒
+	JMSTaskID    string // deploy 时填
 	JMSAssetName string // deploy 时填
-	JMSOutput   string // deploy 时填,会截到 JMSOutputTailLen
-	ErrorMsg    string // 失败原因
+	JMSOutput    string // deploy 时填,会截到 JMSOutputTailLen
+	ErrorMsg     string // 失败原因
 }
 
 // LogOperation 异步写一条操作日志
 //
 // 为什么 async(service 立即返回,后台 goroutine 写 DB):
-//   1. 写日志不应该拖慢业务接口(几十毫秒级)
-//   2. 写日志失败不应该影响业务结果
-//   3. 业务接口已经返回,日志晚几毫秒落库无影响
+//  1. 写日志不应该拖慢业务接口(几十毫秒级)
+//  2. 写日志失败不应该影响业务结果
+//  3. 业务接口已经返回,日志晚几毫秒落库无影响
 //
 // 入参 c 是 gin.Context(传 nil 也能跑,只是拿不到 user/username/ip/ua)
 func LogOperation(c *gin.Context, p LogOperationParams) {
@@ -79,18 +81,18 @@ func LogOperation(c *gin.Context, p LogOperationParams) {
 	}
 	go func() {
 		log := &model.OperationLog{
-			Event:     p.Event,
-			Result:    p.Result,
-			Method:    p.Method,
-			Path:      p.Path,
-			TargetType: p.TargetType,
-			TargetID:  p.TargetID,
-			TargetName: p.TargetName,
-			DurationMS: p.DurationMS,
-			JMSTaskID: p.JMSTaskID,
+			Event:        p.Event,
+			Result:       p.Result,
+			Method:       p.Method,
+			Path:         p.Path,
+			TargetType:   p.TargetType,
+			TargetID:     p.TargetID,
+			TargetName:   p.TargetName,
+			DurationMS:   p.DurationMS,
+			JMSTaskID:    p.JMSTaskID,
 			JMSAssetName: p.JMSAssetName,
-			JMSOutput: trimTail(p.JMSOutput, JMSOutputTailLen),
-			ErrorMsg: trimTail(p.ErrorMsg, 500),
+			JMSOutput:    trimTail(p.JMSOutput, JMSOutputTailLen),
+			ErrorMsg:     trimTail(p.ErrorMsg, 500),
 		}
 		if c != nil {
 			if v, ok := c.Get("user_id"); ok {

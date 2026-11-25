@@ -13,6 +13,7 @@
 //	GET    /api/codeDeploy/packages/:id                单个代码包
 //	POST   /api/codeDeploy/packages                    上传代码包(multipart)
 //	POST   /api/codeDeploy/packages/:id/pull           触发部署(目前 mock)
+//	POST   /api/codeDeploy/operation-logs/clear        一键清除部署数据(按时间范围)
 //
 // 权限:走 PermissionMiddleware。
 //
@@ -85,5 +86,7 @@ func CodeDeployRoutes(rg *gin.RouterGroup) {
 		// 操作日志(部署日志菜单用,2026-10-16 新增)
 		g.GET("/operation-logs", codeDeploy.ListOperationLogs)
 		g.GET("/operation-logs/:id", codeDeploy.GetOperationLog)
+		// 一键清除部署数据(按时间范围清日志 + 代码包 + 对象存储文件)
+		g.POST("/operation-logs/clear", codeDeploy.ClearDeployData)
 	}
 }
